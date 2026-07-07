@@ -13,12 +13,21 @@ PALETTE = [((18, 32, 47), (52, 152, 219)), ((26, 20, 40), (155, 89, 182)),
 SLIDE_STYLES = {"infographic", "cardnews", "quote"}
 
 
-def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Path, log):
+def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Path, log,
+                    assets: list[dict] | None = None):
     used_ids: set[int] = set()
+    queue = list(assets or [])
+    if queue and style in SLIDE_STYLES:
+        log(f"그래픽 기반 방식({style})은 슬라이드로 렌더링되어 업로드 소스 {len(queue)}개를 사용하지 않습니다")
     for i, scene in enumerate(scenes):
         scene["overlay"] = _make_overlay(scene, size, style, workdir / f"ov_{i:02d}.png", i)
         if style in SLIDE_STYLES:
             scene["image"] = _make_slide(scene, size, style, workdir / f"slide_{i:02d}.png", i)
+            continue
+        if queue:
+            asset = queue.pop(0)
+            scene["video" if asset["kind"] == "video" else "image"] = asset["path"]
+            log(f"장면 {i + 1}: 업로드 소스 사용 ({asset['name']})")
             continue
         video = _fetch_stock(scene.get("visual_keywords", ""), fmt, workdir / f"stock_{i:02d}.mp4", used_ids)
         if video:

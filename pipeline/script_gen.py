@@ -43,10 +43,11 @@ SCHEMA = """{
 }"""
 
 
-def generate_script(topic: str, fmt: str, style: str, refs: list[dict], extra: str) -> dict:
+def generate_script(topic: str, fmt: str, style: str, refs: list[dict], extra: str,
+                    source_text: str = "", asset_count: int = 0) -> dict:
     if not ANTHROPIC_API_KEY:
         return _demo_script(topic, fmt, style)
-    prompt = _build_prompt(topic, fmt, style, refs, extra)
+    prompt = _build_prompt(topic, fmt, style, refs, extra, source_text, asset_count)
     import anthropic
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -57,7 +58,8 @@ def generate_script(topic: str, fmt: str, style: str, refs: list[dict], extra: s
     return _parse_json(msg.content[0].text)
 
 
-def _build_prompt(topic: str, fmt: str, style: str, refs: list[dict], extra: str) -> str:
+def _build_prompt(topic: str, fmt: str, style: str, refs: list[dict], extra: str,
+                  source_text: str = "", asset_count: int = 0) -> str:
     length_rule = ("전체 나레이션 45~55초 분량, 장면 6~8개, 장면당 1~2문장. 첫 장면은 강력한 훅."
                    if fmt == "short" else
                    "전체 나레이션 4~6분 분량, 장면 12~18개. 도입 훅 → 본론 → 마무리(구독 유도) 구조.")
@@ -70,6 +72,9 @@ def _build_prompt(topic: str, fmt: str, style: str, refs: list[dict], extra: str
 - 분량 규칙: {length_rule}
 - 참고 영상 정보(말투/구성/소재 참고): {ref_text}
 - 추가 요청사항: {extra or "없음"}
+- 소스 자료(아래 내용이 있으면 이를 최우선 근거로 대본 작성, 없는 사실 지어내지 말 것):
+{source_text[:5000] or "없음"}
+- 사용자 업로드 비주얼 소스: {f"{asset_count}개 (앞 장면부터 순서대로 배치되므로 visual_keywords는 보조용)" if asset_count else "없음"}
 
 규칙:
 1. narration은 TTS로 읽히므로 자연스러운 구어체로, 숫자는 한글 발음이 자연스럽게.

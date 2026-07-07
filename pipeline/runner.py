@@ -35,7 +35,8 @@ def _run(job: dict):
         _log(job, f"참고 분석: {r.get('title') or r.get('error', '')}")
 
     _set(job, "대본 생성 중 (Claude)", 15)
-    script = generate_script(p["topic"], p["format"], p["style"], refs, p.get("extra", ""))
+    script = generate_script(p["topic"], p["format"], p["style"], refs, p.get("extra", ""),
+                             p.get("source_text", ""), len(p.get("assets", [])))
     job["script"] = script
     (workdir / "script.json").write_text(json.dumps(script, ensure_ascii=False, indent=2), encoding="utf-8")
     _log(job, f"대본 완성: {script['title']} (장면 {len(script['scenes'])}개)")
@@ -46,10 +47,15 @@ def _run(job: dict):
     _log(job, f"나레이션 완료: 총 {total:.0f}초")
 
     _set(job, "비주얼 수집/생성 중", 45)
-    prepare_visuals(script["scenes"], p["format"], p["style"], size, workdir, lambda m: _log(job, m))
+    prepare_visuals(script["scenes"], p["format"], p["style"], size, workdir,
+                    lambda m: _log(job, m), p.get("assets", []))
 
     _set(job, "영상 조립 중 (FFmpeg)", 65)
-    job["video"] = assemble(script["scenes"], size, workdir, lambda m: _log(job, m))
+    bgm = p.get("bgm", [])
+    if bgm:
+        _log(job, f"배경음악 적용: {bgm[0]['name']}")
+    job["video"] = assemble(script["scenes"], size, workdir, lambda m: _log(job, m),
+                            bgm[0]["path"] if bgm else None)
 
     _set(job, "썸네일 생성 중", 92)
     job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir)

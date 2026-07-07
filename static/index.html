@@ -33,6 +33,9 @@
   .btn2 { padding:10px 18px; background:var(--ok); border:0; border-radius:8px; color:#08130c; font-weight:bold; cursor:pointer; font-family:inherit; font-size:14px; }
   .link { color:#6ab0ff; }
   .badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:#111827; color:var(--sub); margin-left:6px; }
+  input[type=file] { width:100%; background:#111827; border:1px dashed var(--line); border-radius:8px; color:var(--sub); padding:12px; font-size:13px; font-family:inherit; cursor:pointer; }
+  .filelist { font-size:12px; color:var(--sub); margin-top:6px; line-height:1.7; }
+  .filelist b { color:var(--text); font-weight:normal; }
 </style>
 </head>
 <body>
@@ -82,6 +85,13 @@
     <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
     <textarea id="refs" rows="2" placeholder="https://www.youtube.com/watch?v=..."></textarea>
 
+    <label>소스 자료 텍스트 (선택 — 원고·기사·정보를 붙여넣으면 대본의 최우선 근거로 사용됩니다)</label>
+    <textarea id="srctext" rows="4" placeholder="영상에 담을 내용, 직접 쓴 원고, 기사 본문, 제품 정보 등"></textarea>
+
+    <label>소스 파일 업로드 (선택 — 이미지·영상은 장면 순서대로 화면에 사용, 음악은 배경음악)</label>
+    <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
+    <div id="filelist" class="filelist"></div>
+
     <label>추가 요청사항 (선택)</label>
     <input type="text" id="extra" placeholder="예: 40대 대상, 차분한 톤으로">
 
@@ -98,21 +108,32 @@ document.querySelectorAll("#fmt button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#fmt button").forEach(x => x.classList.toggle("on", x === b));
 });
 
+const fileInput = document.getElementById("files");
+fileInput.onchange = () => {
+  const kinds = {image:"🖼 장면용", video:"🎞 장면용", audio:"🎵 배경음악"};
+  document.getElementById("filelist").innerHTML = [...fileInput.files].map(f =>
+    `<b>${esc(f.name)}</b> — ${kinds[f.type.split("/")[0]] || "?"} (${(f.size / 1048576).toFixed(1)}MB)`).join("<br>");
+};
+
 async function createJob() {
   const topic = document.getElementById("topic").value.trim();
   if (!topic) return alert("주제를 입력하세요");
-  const body = {
-    topic, format: fmt,
-    style: document.getElementById("style").value,
-    voice: document.getElementById("voice").value,
-    extra: document.getElementById("extra").value,
-    reference_urls: document.getElementById("refs").value.split("\n").map(s => s.trim()).filter(Boolean),
-  };
+  const fd = new FormData();
+  fd.append("topic", topic);
+  fd.append("format", fmt);
+  fd.append("style", document.getElementById("style").value);
+  fd.append("voice", document.getElementById("voice").value);
+  fd.append("extra", document.getElementById("extra").value);
+  fd.append("reference_urls", document.getElementById("refs").value);
+  fd.append("source_text", document.getElementById("srctext").value);
+  for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;
-  const r = await fetch("/api/jobs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const r = await fetch("/api/jobs", {method:"POST", body: fd});
   btn.disabled = false;
   if (!r.ok) return alert((await r.json()).detail || "요청 실패");
+  fileInput.value = "";
+  document.getElementById("filelist").innerHTML = "";
   refresh();
 }
 
