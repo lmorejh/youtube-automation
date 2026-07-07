@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+anthropic
+edge-tts
+httpx
+Pillow
+yt-dlp
+google-api-python-client
+google-auth-oauthlib

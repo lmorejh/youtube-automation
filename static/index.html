@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>유튜브 영상 자동 제작</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2233; --line:#2a3550; --text:#e8ecf5; --sub:#93a0b8; --accent:#ff4757; --ok:#2ecc71; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:'Malgun Gothic',sans-serif; padding:24px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:22px; margin-bottom:4px; }
+  .sub { color:var(--sub); font-size:13px; margin-bottom:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:16px; }
+  label { display:block; font-size:13px; color:var(--sub); margin:14px 0 6px; }
+  input[type=text], textarea, select { width:100%; background:#111827; border:1px solid var(--line); border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; font-family:inherit; }
+  textarea { resize:vertical; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:200px; }
+  .seg { display:flex; gap:8px; }
+  .seg button { flex:1; padding:10px; background:#111827; border:1px solid var(--line); border-radius:8px; color:var(--sub); cursor:pointer; font-family:inherit; font-size:14px; }
+  .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:bold; }
+  .go { width:100%; margin-top:18px; padding:14px; background:var(--accent); border:0; border-radius:10px; color:#fff; font-size:16px; font-weight:bold; cursor:pointer; font-family:inherit; }
+  .go:disabled { opacity:.5; cursor:default; }
+  .job h3 { font-size:15px; margin-bottom:8px; }
+  .bar { height:8px; background:#111827; border-radius:4px; overflow:hidden; margin:8px 0; }
+  .bar i { display:block; height:100%; background:var(--ok); transition:width .5s; }
+  .stage { font-size:13px; color:var(--sub); }
+  .log { background:#0b101c; border-radius:8px; padding:10px; font-size:12px; color:var(--sub); max-height:140px; overflow-y:auto; margin-top:10px; white-space:pre-wrap; }
+  .err { color:#ff6b6b; font-size:13px; margin-top:8px; }
+  video { width:100%; max-height:420px; border-radius:8px; margin-top:12px; background:#000; }
+  .upbox { border-top:1px solid var(--line); margin-top:14px; padding-top:14px; }
+  .btn2 { padding:10px 18px; background:var(--ok); border:0; border-radius:8px; color:#08130c; font-weight:bold; cursor:pointer; font-family:inherit; font-size:14px; }
+  .link { color:#6ab0ff; }
+  .badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:#111827; color:var(--sub); margin-left:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 유튜브 영상 자동 제작 · 배포</h1>
+  <div class="sub">주제와 옵션을 입력하면 대본 → 나레이션 → 영상 → 썸네일까지 자동 생성하고, 확인 후 유튜브에 업로드합니다.</div>
+
+  <div class="card">
+    <label>영상 주제 *</label>
+    <textarea id="topic" rows="2" placeholder="예: 2026년 하반기 국내 여행지 추천 5곳"></textarea>
+
+    <div class="row">
+      <div>
+        <label>영상 형식</label>
+        <div class="seg" id="fmt">
+          <button data-v="long" class="on">롱폼 (16:9)</button>
+          <button data-v="short">숏폼 (9:16)</button>
+        </div>
+      </div>
+      <div>
+        <label>구성 방식</label>
+        <select id="style">
+          <option value="realistic">실사 (스톡영상)</option>
+          <option value="infographic">인포그래픽</option>
+          <option value="news">뉴스 클립</option>
+        </select>
+      </div>
+      <div>
+        <label>나레이션 음성</label>
+        <select id="voice">
+          <option value="ko-KR-SunHiNeural">선히 (여성)</option>
+          <option value="ko-KR-InJoonNeural">인준 (남성)</option>
+          <option value="ko-KR-HyunsuMultilingualNeural">현수 (남성)</option>
+        </select>
+      </div>
+    </div>
+
+    <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
+    <textarea id="refs" rows="2" placeholder="https://www.youtube.com/watch?v=..."></textarea>
+
+    <label>추가 요청사항 (선택)</label>
+    <input type="text" id="extra" placeholder="예: 40대 대상, 차분한 톤으로">
+
+    <button class="go" id="go" onclick="createJob()">영상 생성 시작</button>
+  </div>
+
+  <div id="jobs"></div>
+</div>
+
+<script>
+let fmt = "long";
+document.querySelectorAll("#fmt button").forEach(b => b.onclick = () => {
+  fmt = b.dataset.v;
+  document.querySelectorAll("#fmt button").forEach(x => x.classList.toggle("on", x === b));
+});
+
+async function createJob() {
+  const topic = document.getElementById("topic").value.trim();
+  if (!topic) return alert("주제를 입력하세요");
+  const body = {
+    topic, format: fmt,
+    style: document.getElementById("style").value,
+    voice: document.getElementById("voice").value,
+    extra: document.getElementById("extra").value,
+    reference_urls: document.getElementById("refs").value.split("\n").map(s => s.trim()).filter(Boolean),
+  };
+  const btn = document.getElementById("go");
+  btn.disabled = true;
+  const r = await fetch("/api/jobs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  btn.disabled = false;
+  if (!r.ok) return alert((await r.json()).detail || "요청 실패");
+  refresh();
+}
+
+async function doUpload(id) {
+  const privacy = document.getElementById("pv-" + id).value;
+  const title = document.getElementById("ti-" + id).value;
+  const names = {private:"비공개", unlisted:"일부공개", public:"공개"};
+  if (!confirm(`"${title}"\n공개 설정: ${names[privacy]}\n\nYouTube에 업로드할까요?`)) return;
+  await fetch(`/api/jobs/${id}/upload`, {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({title, privacy, description: document.getElementById("de-" + id).value})});
+  refresh();
+}
+
+function jobCard(j) {
+  const fmtName = j.params.format === "short" ? "숏폼" : "롱폼";
+  const styleName = {realistic:"실사", infographic:"인포그래픽", news:"뉴스클립"}[j.params.style] || j.params.style;
+  let html = `<div class="card job"><h3>${esc(j.params.topic)}
+    <span class="badge">${fmtName}</span><span class="badge">${styleName}</span></h3>`;
+  if (j.status === "running")
+    html += `<div class="bar"><i style="width:${j.progress}%"></i></div><div class="stage">⏳ ${esc(j.stage)} (${j.progress}%)</div>`;
+  if (j.status === "error") html += `<div class="err">❌ ${esc(j.error || "")}</div>`;
+  if (j.status === "done") {
+    html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료</div>
+      <video controls preload="metadata" src="/api/jobs/${j.id}/video"></video>
+      <div class="upbox">
+        <label>업로드 제목</label><input type="text" id="ti-${j.id}" value="${esc(j.script?.title || "")}">
+        <label>설명</label><textarea id="de-${j.id}" rows="3">${esc(j.script?.description || "")}</textarea>
+        <div class="row" style="margin-top:12px; align-items:center">
+          <div><select id="pv-${j.id}">
+            <option value="private">비공개 (업로드 후 직접 공개)</option>
+            <option value="unlisted">일부공개</option>
+            <option value="public">공개</option>
+          </select></div>
+          <div>${uploadState(j)}</div>
+        </div>
+      </div>`;
+  }
+  html += `<div class="log">${j.log.slice(-8).map(esc).join("\n")}</div></div>`;
+  return html;
+}
+
+function uploadState(j) {
+  if (j.upload_status === "uploading") return `<span class="stage">⏳ YouTube 업로드 중...</span>`;
+  if (j.upload_status === "uploaded") return `<a class="link" href="${j.youtube_url}" target="_blank">✅ 업로드 완료 — 영상 보기</a>`;
+  const retry = j.upload_status === "upload_error" ? " (재시도)" : "";
+  return `<button class="btn2" onclick="doUpload('${j.id}')">📤 YouTube 업로드${retry}</button>`;
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let lastState = "";
+
+async function refresh() {
+  const jobs = await (await fetch("/api/jobs")).json();
+  const state = JSON.stringify(jobs.map(j => [j.id, j.status, j.progress, j.stage, j.upload_status, j.log.length]));
+  if (state !== lastState) {
+    lastState = state;
+    document.getElementById("jobs").innerHTML = jobs.map(jobCard).join("");
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
