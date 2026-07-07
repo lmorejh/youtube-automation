@@ -13,6 +13,7 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 YOUTUBE_CLIENT_SECRET_FILE = BASE_DIR / os.getenv("YOUTUBE_CLIENT_SECRET_FILE", "client_secret.json")
 YOUTUBE_TOKEN_FILE = BASE_DIR / "token.json"
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "ko-KR-SunHiNeural")
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")  # 설정 시 웹 UI에 비밀번호 인증 적용
 
 FONT_REGULAR = "C:/Windows/Fonts/malgun.ttf"
 FONT_BOLD = "C:/Windows/Fonts/malgunbd.ttf"

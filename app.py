@@ -3,16 +3,38 @@ import threading
 import uuid
 from pathlib import Path
 
+import base64
+import hmac
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from pipeline import runner, upload
-from pipeline.config import DEFAULT_VOICE, OUTPUT_DIR
+from pipeline.config import APP_PASSWORD, DEFAULT_VOICE, OUTPUT_DIR
 
 app = FastAPI(title="YouTube 자동화")
 BASE = Path(__file__).resolve().parent
 JOBS: dict[str, dict] = {}
+
+
+@app.middleware("http")
+async def require_password(request, call_next):
+    """APP_PASSWORD 설정 시 전체 요청에 Basic 인증 요구 (터널 공개용)."""
+    if APP_PASSWORD and not _password_ok(request.headers.get("authorization", "")):
+        return Response(status_code=401,
+                        headers={"WWW-Authenticate": 'Basic realm="youtube-automation"'})
+    return await call_next(request)
+
+
+def _password_ok(header: str) -> bool:
+    if not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[6:]).decode("utf-8")
+    except Exception:
+        return False
+    return hmac.compare_digest(decoded.split(":", 1)[-1], APP_PASSWORD)
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm"}

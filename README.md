@@ -7,6 +7,16 @@
 
 `run.bat` 더블클릭 → 브라우저에서 http://localhost:8600 자동 열림
 
+## 웹(외부)에서 접속하기 — Cloudflare Tunnel
+
+`tunnel.bat` 더블클릭 → 콘솔에 표시되는 `https://???.trycloudflare.com` 주소로 어디서든 접속.
+
+- 접속 시 브라우저가 아이디/비밀번호를 물음 → **아이디는 아무거나, 비밀번호는 `.env`의 `APP_PASSWORD`**
+- 임시 터널이라 **주소는 터널을 켤 때마다 바뀜** (PC와 터널이 켜져 있는 동안만 접속 가능)
+- 파일 업로드는 요청당 최대 100MB (Cloudflare 무료 플랜 제한)
+- 고정 주소가 필요하면: Cloudflare 계정 + 보유 도메인 등록 후 명명된 터널(named tunnel)로 전환
+  (`cloudflared tunnel login` → `cloudflared tunnel create ...`), 이때 Cloudflare Access로 이메일 인증도 무료로 추가 가능
+
 ## 파이프라인
 
 | 단계 | 사용 기술 | 비고 |
