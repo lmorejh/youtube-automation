@@ -55,9 +55,18 @@
       <div>
         <label>구성 방식</label>
         <select id="style">
-          <option value="realistic">실사 (스톡영상)</option>
-          <option value="infographic">인포그래픽</option>
-          <option value="news">뉴스 클립</option>
+          <optgroup label="스톡영상 기반">
+            <option value="realistic">실사 (스톡영상 + 자막)</option>
+            <option value="documentary">다큐/스토리텔링 (시네마틱)</option>
+            <option value="news">뉴스 클립 (헤드라인 자막바)</option>
+            <option value="ranking">랭킹 Top N (카운트다운)</option>
+            <option value="tutorial">튜토리얼 (단계별 STEP)</option>
+          </optgroup>
+          <optgroup label="그래픽 기반">
+            <option value="infographic">인포그래픽 (요약 슬라이드)</option>
+            <option value="cardnews">카드뉴스 (텍스트 카드)</option>
+            <option value="quote">명언/감성 (문구 중심)</option>
+          </optgroup>
         </select>
       </div>
       <div>
@@ -119,7 +128,8 @@ async function doUpload(id) {
 
 function jobCard(j) {
   const fmtName = j.params.format === "short" ? "숏폼" : "롱폼";
-  const styleName = {realistic:"실사", infographic:"인포그래픽", news:"뉴스클립"}[j.params.style] || j.params.style;
+  const styleName = {realistic:"실사", documentary:"다큐", news:"뉴스클립", ranking:"랭킹", tutorial:"튜토리얼",
+    infographic:"인포그래픽", cardnews:"카드뉴스", quote:"명언/감성"}[j.params.style] || j.params.style;
   let html = `<div class="card job"><h3>${esc(j.params.topic)}
     <span class="badge">${fmtName}</span><span class="badge">${styleName}</span></h3>`;
   if (j.status === "running")

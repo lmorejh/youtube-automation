@@ -3,7 +3,27 @@ import json
 
 from .config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 
-STYLE_NAMES = {"realistic": "실사 스톡영상", "infographic": "인포그래픽", "news": "뉴스 클립"}
+STYLE_NAMES = {
+    "realistic": "실사 스톡영상",
+    "documentary": "다큐멘터리/스토리텔링",
+    "news": "뉴스 클립",
+    "ranking": "랭킹 카운트다운 (Top N)",
+    "tutorial": "튜토리얼/하우투",
+    "infographic": "인포그래픽",
+    "cardnews": "카드뉴스 (텍스트 중심)",
+    "quote": "명언/감성 문구",
+}
+
+STYLE_GUIDES = {
+    "realistic": "장면마다 어울리는 실사 스톡영상 위에 나레이션과 자막이 얹힙니다. 시각적으로 묘사 가능한 소재 위주로.",
+    "documentary": "몰입감 있는 스토리텔링 구조(도입 훅 → 전개 → 여운). 차분하고 서정적인 나레이션, 시네마틱한 장면 묘사.",
+    "news": "보도체 나레이션(앵커 톤). headline에는 뉴스 하단 자막바에 들어갈 간결한 헤드라인을 반드시 작성.",
+    "ranking": "Top N 카운트다운 구성. 인트로 1장면 후 낮은 순위부터 시작해 마지막에 1위 공개. 순위 장면의 label에 'TOP 5', 'TOP 1'처럼 표기.",
+    "tutorial": "단계별 하우투 구성. 인트로 1장면 후 각 단계 장면의 label에 'STEP 1', 'STEP 2'처럼 표기하고 실행 가능한 팁 포함.",
+    "infographic": "정보 요약형. 각 장면의 bullets에 화면에 표시할 핵심 항목 2~4개를 충실히 작성.",
+    "cardnews": "카드뉴스형. caption은 카드에 크게 들어갈 한 문장 핵심 메시지(20자 이내), bullets에 보조 설명 1~2개.",
+    "quote": "명언/위로/동기부여 문구 중심. caption에 마음에 남을 핵심 문구를, 나레이션은 그 문구를 잔잔하게 풀어주는 해설로.",
+}
 
 SCHEMA = """{
   "title": "유튜브 제목 (한국어, 클릭을 부르는 제목)",
@@ -15,8 +35,9 @@ SCHEMA = """{
       "narration": "이 장면에서 읽을 나레이션 (자연스러운 구어체)",
       "caption": "화면에 표시할 자막/핵심 문구 (25자 이내)",
       "headline": "뉴스 스타일일 때 하단 헤드라인 (없으면 caption과 동일)",
+      "label": "화면 뱃지 문구. 랭킹이면 'TOP 3', 튜토리얼이면 'STEP 1' 형식, 해당 없으면 빈 문자열",
       "visual_keywords": "english stock footage search keywords",
-      "bullets": ["인포그래픽일 때 표시할 항목 1", "항목 2"]
+      "bullets": ["인포그래픽/카드뉴스일 때 표시할 항목 1", "항목 2"]
     }
   ]
 }"""
@@ -24,7 +45,7 @@ SCHEMA = """{
 
 def generate_script(topic: str, fmt: str, style: str, refs: list[dict], extra: str) -> dict:
     if not ANTHROPIC_API_KEY:
-        return _demo_script(topic, fmt)
+        return _demo_script(topic, fmt, style)
     prompt = _build_prompt(topic, fmt, style, refs, extra)
     import anthropic
 
@@ -45,7 +66,7 @@ def _build_prompt(topic: str, fmt: str, style: str, refs: list[dict], extra: str
 
 - 주제: {topic}
 - 형식: {"숏폼(세로 9:16)" if fmt == "short" else "롱폼(가로 16:9)"}
-- 구성 방식: {STYLE_NAMES.get(style, style)}
+- 구성 방식: {STYLE_NAMES.get(style, style)} — {STYLE_GUIDES.get(style, "")}
 - 분량 규칙: {length_rule}
 - 참고 영상 정보(말투/구성/소재 참고): {ref_text}
 - 추가 요청사항: {extra or "없음"}
@@ -53,8 +74,9 @@ def _build_prompt(topic: str, fmt: str, style: str, refs: list[dict], extra: str
 규칙:
 1. narration은 TTS로 읽히므로 자연스러운 구어체로, 숫자는 한글 발음이 자연스럽게.
 2. visual_keywords는 반드시 영어로, 스톡영상 검색에 적합한 2~4단어.
-3. 인포그래픽 방식이면 bullets를 충실히, 그 외 방식이면 bullets는 빈 배열.
-4. 아래 JSON 스키마로만 응답하세요. JSON 외 다른 텍스트 금지.
+3. 인포그래픽/카드뉴스 방식이면 bullets를 충실히, 그 외 방식이면 bullets는 빈 배열.
+4. label은 랭킹/튜토리얼 방식에서만 채우고 나머지는 빈 문자열.
+5. 아래 JSON 스키마로만 응답하세요. JSON 외 다른 텍스트 금지.
 
 {SCHEMA}"""
 
@@ -71,12 +93,14 @@ def _parse_json(text: str) -> dict:
     return script
 
 
-def _demo_script(topic: str, fmt: str) -> dict:
+def _demo_script(topic: str, fmt: str, style: str) -> dict:
     n = 4 if fmt == "short" else 6
+    labels = {"ranking": lambda i: f"TOP {n - i}", "tutorial": lambda i: f"STEP {i + 1}"}
     scenes = [{
         "narration": f"{topic}에 대한 데모 장면 {i + 1}번입니다. API 키를 설정하면 실제 대본이 생성됩니다.",
         "caption": f"데모 장면 {i + 1}",
         "headline": f"{topic} 핵심 포인트 {i + 1}",
+        "label": labels[style](i) if style in labels else "",
         "visual_keywords": "city skyline aerial",
         "bullets": [f"포인트 {i + 1}-1", f"포인트 {i + 1}-2"],
     } for i in range(n)]
