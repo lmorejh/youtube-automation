@@ -8,7 +8,8 @@ ENCODE = ["-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20"
           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "44100"]
 
 
-def assemble(scenes: list[dict], size, workdir: Path, log, bgm: str | None = None) -> str:
+def assemble(scenes: list[dict], size, workdir: Path, log, bgm: str | None = None,
+             bgm_volume: float = 0.12) -> str:
     clips = []
     for i, scene in enumerate(scenes):
         out = workdir / f"clip_{i:02d}.mp4"
@@ -17,7 +18,7 @@ def assemble(scenes: list[dict], size, workdir: Path, log, bgm: str | None = Non
         log(f"장면 {i + 1}/{len(scenes)} 조립 완료")
     merged = _concat(clips, workdir)
     final = workdir / "final.mp4"
-    _finalize(merged, final, bgm)
+    _finalize(merged, final, bgm, bgm_volume)
     _write_srt(scenes, workdir / "subtitles.srt")
     return str(final)
 
@@ -54,15 +55,15 @@ def _concat(clips: list[Path], workdir: Path) -> Path:
     return merged
 
 
-def _finalize(merged: Path, final: Path, bgm: str | None = None):
+def _finalize(merged: Path, final: Path, bgm: str | None = None, bgm_volume: float = 0.12):
     total = probe_duration(merged)
     fade = f"fade=t=in:d=0.5,fade=t=out:st={max(total - 0.7, 0):.2f}:d=0.7"
     afade = f"afade=t=out:st={max(total - 0.7, 0):.2f}:d=0.7"
-    if not bgm:
+    if not bgm or bgm_volume <= 0:
         run_ffmpeg(["-i", str(merged), "-vf", fade, "-af", afade, *ENCODE, str(final)])
         return
     run_ffmpeg(["-i", str(merged), "-stream_loop", "-1", "-i", bgm, "-filter_complex",
-                f"[0:v]{fade}[v];[1:a]volume=0.12[b];"
+                f"[0:v]{fade}[v];[1:a]volume={bgm_volume:.3f}[b];"
                 f"[0:a][b]amix=inputs=2:duration=first:normalize=0,{afade}[a]",
                 "-map", "[v]", "-map", "[a]", "-t", f"{total:.3f}", *ENCODE, str(final)])
 

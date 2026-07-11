@@ -53,11 +53,11 @@ def _run(job: dict):
                     lambda m: _log(job, m), p.get("assets", []), p.get("caption"))
 
     _set(job, "영상 조립 중 (FFmpeg)", 65)
-    bgm = p.get("bgm", [])
-    if bgm:
-        _log(job, f"배경음악 적용: {bgm[0]['name']}")
+    bgm_path, bgm_vol = bgm_settings(p)
+    if bgm_path:
+        _log(job, f"배경음악 적용: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
     job["video"] = assemble(script["scenes"], size, workdir, lambda m: _log(job, m),
-                            bgm[0]["path"] if bgm else None)
+                            bgm_path, bgm_vol)
 
     _set(job, "썸네일 생성 중", 92)
     from .fonts import resolve
@@ -91,14 +91,26 @@ def _rerender(job: dict, caption: dict):
     refresh_captions(scenes, p["style"], size, workdir, caption)
 
     _set(job, "재렌더: 영상 조립 중 (FFmpeg)", 45)
-    bgm = p.get("bgm", [])
-    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m),
-                            bgm[0]["path"] if bgm else None)
+    bgm_path, bgm_vol = bgm_settings(p)
+    if bgm_path:
+        _log(job, f"배경음악: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
+    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m), bgm_path, bgm_vol)
 
     _set(job, "재렌더: 썸네일 생성 중", 92)
     from .fonts import resolve
     job["thumbnail"] = make_thumbnail(job["video"], job["script"].get("thumbnail_text", "")[:12],
                                       workdir, resolve(caption.get("font", ""))[1])
+
+
+def bgm_settings(p: dict) -> tuple[str | None, float]:
+    """선택된 BGM 파일 경로와 볼륨. bgm_use 미지정 시 첫 오디오, ""면 BGM 없음."""
+    entries = p.get("bgm", [])
+    default = entries[0]["path"] if entries else None
+    path = p.get("bgm_use", default) or None
+    if path and not Path(path).exists():
+        path = None
+    volume = max(0.0, min(1.0, float(p.get("bgm_volume", 0.12))))
+    return path, volume
 
 
 def _set(job: dict, stage: str, progress: int):

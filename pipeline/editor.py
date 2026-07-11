@@ -60,10 +60,11 @@ def create_session(job: dict | None) -> dict:
 
 
 def _load_job_clips(session: dict, job: dict):
+    from .runner import bgm_settings
+
     session["job_id"] = job["id"]
     session["size"] = list(SIZES[job["params"]["format"]])
-    bgm = job["params"].get("bgm") or []
-    session["bgm"] = bgm[0]["path"] if bgm else None
+    session["bgm"], session["bgm_volume"] = bgm_settings(job["params"])
     job_dir = Path(job["video"]).parent
     for i, scene in enumerate(job["script"]["scenes"]):
         clip = job_dir / f"clip_{i:02d}.mp4"
@@ -97,7 +98,7 @@ def render(session: dict, timeline: list[dict]):
         workdir = Path(session["workdir"])
         merged = _concat(parts, workdir)
         final = workdir / "final.mp4"
-        _finalize(merged, final, session["bgm"])
+        _finalize(merged, final, session["bgm"], session.get("bgm_volume", 0.12))
         session.update(result=str(final), status="done", progress=100)
     except Exception as e:
         session.update(status="error", error=f"{type(e).__name__}: {e}")

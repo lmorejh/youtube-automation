@@ -123,6 +123,10 @@
     <input type="file" id="files" multiple accept="image/*,video/*,audio/*">
     <div id="filelist" class="filelist"></div>
 
+    <label>배경음악 볼륨: <b id="bgmvolv" style="color:var(--ok)">12%</b> (오디오 파일 업로드 시 적용)</label>
+    <input type="range" id="bgmvol" min="0" max="50" value="12" style="width:100%; accent-color:var(--accent)"
+      oninput="document.getElementById('bgmvolv').textContent = this.value + '%'">
+
     <label>추가 요청사항 (선택)</label>
     <input type="text" id="extra" placeholder="예: 40대 대상, 차분한 톤으로">
 
@@ -170,6 +174,7 @@ async function createJob() {
   fd.append("caption_size", document.getElementById("capsize").value);
   fd.append("caption_style", document.getElementById("capstyle").value);
   fd.append("caption_color", document.getElementById("capcolor").value);
+  fd.append("bgm_volume", document.getElementById("bgmvol").value);
   for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;
@@ -182,15 +187,17 @@ async function createJob() {
 }
 
 async function doRerender(id) {
-  if (!confirm("기존 영상을 새 자막 설정으로 다시 만듭니다.\n(대본과 나레이션은 그대로 유지됩니다)\n\n계속할까요?")) return;
-  const body = {
-    font: document.getElementById("rr-font-" + id).value,
-    size: document.getElementById("rr-size-" + id).value,
-    style: document.getElementById("rr-style-" + id).value,
-    color: document.getElementById("rr-color-" + id).value,
-  };
-  const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST",
-    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  if (!confirm("기존 영상을 새 자막·BGM 설정으로 다시 만듭니다.\n(대본과 나레이션은 그대로 유지됩니다)\n\n계속할까요?")) return;
+  const fd = new FormData();
+  fd.append("font", document.getElementById("rr-font-" + id).value);
+  fd.append("size", document.getElementById("rr-size-" + id).value);
+  fd.append("style", document.getElementById("rr-style-" + id).value);
+  fd.append("color", document.getElementById("rr-color-" + id).value);
+  fd.append("bgm_use", document.getElementById("rr-bgm-" + id).value);
+  fd.append("bgm_volume", document.getElementById("rr-vol-" + id).value);
+  const bgmFile = document.getElementById("rr-bgmfile-" + id).files[0];
+  if (bgmFile) fd.append("files", bgmFile);
+  const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST", body: fd});
   if (!r.ok) return alert((await r.json()).detail || "재렌더 실패");
   refresh();
 }
@@ -216,11 +223,12 @@ function jobCard(j) {
   if (j.status === "error") html += `<div class="err">❌ ${esc(j.error || "")}</div>`;
   if (j.status === "done") {
     const cap = j.params.caption || {};
+    const bgmVol = Math.round((j.params.bgm_volume ?? 0.12) * 100);
     html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료
         <a class="link" href="/edit?job=${j.id}" style="margin-left:10px">✂️ 편집하기</a></div>
       <video controls preload="metadata" src="/api/jobs/${j.id}/video?t=${j.log.length}"></video>
       <details class="rrbox">
-        <summary>🔁 자막 바꿔서 재렌더 (대본·나레이션 유지)</summary>
+        <summary>🔁 자막·BGM 바꿔서 재렌더 (대본·나레이션 유지)</summary>
         <div class="row" style="margin-top:10px">
           <div><label>폰트</label><select id="rr-font-${j.id}">${fontOptions(cap.font || "")}</select></div>
           <div><label>크기</label><select id="rr-size-${j.id}">
@@ -233,6 +241,19 @@ function jobCard(j) {
           </select></div>
           <div><label>색상</label><input type="color" id="rr-color-${j.id}" value="${cap.color || "#ffffff"}"
             style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <div><label>배경음악</label><select id="rr-bgm-${j.id}">
+            <option value="__keep__">현재 설정 유지</option>
+            <option value="">없음 (BGM 제거)</option>
+            ${(j.params.bgm || []).map((b, bi) => `<option value="${bi}">${esc(b.name)}</option>`).join("")}
+          </select></div>
+          <div><label>BGM 볼륨: <b id="rr-volv-${j.id}" style="color:var(--ok)">${bgmVol}%</b></label>
+            <input type="range" id="rr-vol-${j.id}" min="0" max="50" value="${bgmVol}"
+              style="width:100%; accent-color:var(--accent); margin-top:8px"
+              oninput="document.getElementById('rr-volv-${j.id}').textContent = this.value + '%'"></div>
+          <div><label>새 BGM 파일 (선택 — 업로드하면 그 파일로 교체)</label>
+            <input type="file" id="rr-bgmfile-${j.id}" accept="audio/*" style="padding:8px"></div>
         </div>
         <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
       </details>

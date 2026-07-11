@@ -54,13 +54,6 @@ class UploadRequest(BaseModel):
     privacy: str = "private"    # private | unlisted | public
 
 
-class RerenderRequest(BaseModel):
-    font: str = ""
-    size: str = "normal"
-    color: str = "#ffffff"
-    style: str = "box"
-
-
 class EditorCreate(BaseModel):
     job_id: str | None = None
     fresh: bool = False         # true면 기존 세션 무시하고 새로 시작
@@ -87,6 +80,7 @@ async def create_job(
     source_text: str = Form(""), files: list[UploadFile] = File(default=[]),
     font: str = Form(""), caption_size: str = Form("normal"),
     caption_color: str = Form("#ffffff"), caption_style: str = Form("box"),
+    bgm_volume: str = Form("12"),
 ):
     if not topic.strip():
         raise HTTPException(400, "주제를 입력하세요")
@@ -95,7 +89,7 @@ async def create_job(
     params = {"topic": topic, "format": format, "style": style,
               "reference_urls": [u.strip() for u in reference_urls.splitlines() if u.strip()],
               "extra": extra, "voice": voice, "source_text": source_text,
-              "assets": visuals, "bgm": bgm,
+              "assets": visuals, "bgm": bgm, "bgm_volume": _parse_volume(bgm_volume),
               "caption": {"font": font, "size": caption_size,
                           "color": caption_color, "style": caption_style}}
     job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
@@ -178,21 +172,58 @@ def _do_upload(job: dict, meta: dict):
 
 
 @app.post("/api/jobs/{job_id}/rerender")
-def rerender_job(job_id: str, req: RerenderRequest):
-    """자막 옵션만 바꿔 재렌더 (대본·나레이션 재사용)."""
+async def rerender_job(
+    job_id: str, font: str = Form(""), size: str = Form("normal"),
+    color: str = Form("#ffffff"), style: str = Form("box"),
+    bgm_use: str = Form("__keep__"), bgm_volume: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
+):
+    """자막·BGM 옵션만 바꿔 재렌더 (대본·나레이션 재사용)."""
     job = _find(job_id)
     if job["status"] == "running":
         raise HTTPException(400, "작업이 진행 중입니다")
     if not job.get("script"):
         raise HTTPException(400, "대본이 없어 재렌더할 수 없습니다")
-    missing = [s for s in job["script"]["scenes"] if not Path(s.get("audio", "")).exists()]
-    if missing:
+    if any(not Path(s.get("audio", "")).exists() for s in job["script"]["scenes"]):
         raise HTTPException(400, "나레이션 파일이 삭제되어 재렌더할 수 없습니다")
-    caption = {"font": req.font, "size": req.size, "color": req.color, "style": req.style}
+    p = job["params"]
+    for f in files:  # 새 BGM 업로드 시 목록에 추가하고 그 파일을 선택
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in AUDIO_EXT:
+            raise HTTPException(400, f"오디오 파일만 BGM으로 쓸 수 있습니다: {f.filename}")
+        dest_dir = OUTPUT_DIR / job_id / "assets"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"bgm_{len(p.get('bgm', [])):02d}{ext}"
+        dest.write_bytes(await f.read())
+        p.setdefault("bgm", []).append({"path": str(dest), "name": f.filename, "kind": "audio"})
+        bgm_use = str(len(p["bgm"]) - 1)
+    if bgm_use != "__keep__":
+        p["bgm_use"] = _resolve_bgm(p, bgm_use)  # ""이면 BGM 제거
+    if bgm_volume.strip():
+        p["bgm_volume"] = _parse_volume(bgm_volume)
+    caption = {"font": font, "size": size, "color": color, "style": style}
     job["status"] = "running"
     job["progress"] = 0
     threading.Thread(target=runner.rerender_job, args=(job, caption), daemon=True).start()
     return {"ok": True}
+
+
+def _resolve_bgm(p: dict, choice: str) -> str:
+    """BGM 선택값(목록 인덱스 또는 빈 문자열) → 파일 경로."""
+    if choice == "":
+        return ""
+    try:
+        return p["bgm"][int(choice)]["path"]
+    except (ValueError, IndexError, KeyError):
+        raise HTTPException(400, "잘못된 BGM 선택입니다")
+
+
+def _parse_volume(v: str) -> float:
+    """퍼센트 문자열(0~100) → 0.0~1.0."""
+    try:
+        return max(0.0, min(1.0, float(v) / 100))
+    except ValueError:
+        return 0.12
 
 
 # ---------- 간편 편집기 ----------
