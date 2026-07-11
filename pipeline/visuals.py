@@ -4,7 +4,8 @@ from pathlib import Path
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import FONT_BOLD, FONT_REGULAR, PEXELS_API_KEY
+from .config import PEXELS_API_KEY
+from .fonts import resolve
 
 PALETTE = [((18, 32, 47), (52, 152, 219)), ((26, 20, 40), (155, 89, 182)),
            ((20, 40, 30), (46, 204, 113)), ((40, 26, 18), (230, 126, 34))]
@@ -14,15 +15,16 @@ SLIDE_STYLES = {"infographic", "cardnews", "quote"}
 
 
 def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Path, log,
-                    assets: list[dict] | None = None):
+                    assets: list[dict] | None = None, caption: dict | None = None):
     used_ids: set[int] = set()
     queue = list(assets or [])
+    opts = _caption_opts(caption)
     if queue and style in SLIDE_STYLES:
         log(f"그래픽 기반 방식({style})은 슬라이드로 렌더링되어 업로드 소스 {len(queue)}개를 사용하지 않습니다")
     for i, scene in enumerate(scenes):
-        scene["overlay"] = _make_overlay(scene, size, style, workdir / f"ov_{i:02d}.png", i)
+        scene["overlay"] = _make_overlay(scene, size, style, workdir / f"ov_{i:02d}.png", i, opts)
         if style in SLIDE_STYLES:
-            scene["image"] = _make_slide(scene, size, style, workdir / f"slide_{i:02d}.png", i)
+            scene["image"] = _make_slide(scene, size, style, workdir / f"slide_{i:02d}.png", i, opts)
             continue
         if queue:
             asset = queue.pop(0)
@@ -34,7 +36,26 @@ def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Pat
             scene["video"] = video
         else:
             log(f"장면 {i + 1}: 스톡영상 없음 → 배경 슬라이드로 대체")
-            scene["image"] = _make_fallback(scene, size, workdir / f"bg_{i:02d}.png", i)
+            scene["image"] = _make_fallback(scene, size, workdir / f"bg_{i:02d}.png", i, opts)
+
+
+def _caption_opts(caption: dict | None) -> dict:
+    """자막 옵션: 폰트/크기 배율/색상/표시 방식."""
+    caption = caption or {}
+    regular, bold = resolve(caption.get("font", ""))
+    scales = {"small": 0.8, "normal": 1.0, "large": 1.3}
+    return {"regular": regular, "bold": bold,
+            "scale": scales.get(caption.get("size", "normal"), 1.0),
+            "color": _parse_hex(caption.get("color", "#ffffff")),
+            "mode": caption.get("style", "box")}  # box | outline | shadow
+
+
+def _parse_hex(h: str) -> tuple:
+    try:
+        h = h.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return (255, 255, 255)
 
 
 # ---------- Pexels 스톡영상 ----------
@@ -98,23 +119,23 @@ def _gradient(size, c1, c2) -> Image.Image:
     return img.resize((w, h))
 
 
-def _make_slide(scene: dict, size, style: str, dest: Path, idx: int) -> str:
+def _make_slide(scene: dict, size, style: str, dest: Path, idx: int, opts: dict) -> str:
     if style == "cardnews":
-        return _slide_cardnews(scene, size, dest, idx)
+        return _slide_cardnews(scene, size, dest, idx, opts)
     if style == "quote":
-        return _slide_quote(scene, size, dest, idx)
-    return _slide_infographic(scene, size, dest, idx)
+        return _slide_quote(scene, size, dest, idx, opts)
+    return _slide_infographic(scene, size, dest, idx, opts)
 
 
-def _slide_cardnews(scene: dict, size, dest: Path, idx: int) -> str:
+def _slide_cardnews(scene: dict, size, dest: Path, idx: int, opts: dict) -> str:
     """카드뉴스: 밝은 배경 + 중앙 대형 문구 + 보조 설명."""
     w, h = size
     _, accent = PALETTE[idx % len(PALETTE)]
     img = Image.new("RGB", size, (246, 243, 237))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, w, int(h * 0.015)], fill=accent)
-    title_f = _font(FONT_BOLD, int(w * 0.058))
-    body_f = _font(FONT_REGULAR, int(w * 0.032))
+    title_f = _font(opts["bold"], int(w * 0.058))
+    body_f = _font(opts["regular"], int(w * 0.032))
     lines = _wrap(d, scene.get("caption", ""), title_f, int(w * 0.8))
     bullets = (scene.get("bullets") or [])[:2]
     lh, bh = int(w * 0.08), int(w * 0.05)
@@ -126,21 +147,21 @@ def _slide_cardnews(scene: dict, size, dest: Path, idx: int) -> str:
     for b in bullets:
         d.text(((w - d.textlength(b, font=body_f)) / 2, y), b, font=body_f, fill=(115, 120, 130))
         y += bh
-    num_f = _font(FONT_BOLD, int(w * 0.024))
+    num_f = _font(opts["bold"], int(w * 0.024))
     d.text(((w - d.textlength(f"{idx + 1:02d}", font=num_f)) / 2, h - int(h * 0.07)),
            f"{idx + 1:02d}", font=num_f, fill=accent)
     img.save(dest)
     return str(dest)
 
 
-def _slide_quote(scene: dict, size, dest: Path, idx: int) -> str:
+def _slide_quote(scene: dict, size, dest: Path, idx: int, opts: dict) -> str:
     """명언/감성: 어두운 배경 + 큰따옴표 + 중앙 문구."""
     w, h = size
     c1, accent = PALETTE[idx % len(PALETTE)]
     img = _gradient(size, tuple(int(v * 0.7) for v in c1), (8, 10, 16))
     d = ImageDraw.Draw(img)
-    quote_f = _font(FONT_BOLD, int(w * 0.13))
-    text_f = _font(FONT_BOLD, int(w * 0.05))
+    quote_f = _font(opts["bold"], int(w * 0.13))
+    text_f = _font(opts["bold"], int(w * 0.05))
     lines = _wrap(d, scene.get("caption", ""), text_f, int(w * 0.75))
     lh = int(w * 0.07)
     y = (h - len(lines) * lh) / 2
@@ -153,14 +174,14 @@ def _slide_quote(scene: dict, size, dest: Path, idx: int) -> str:
     return str(dest)
 
 
-def _slide_infographic(scene: dict, size, dest: Path, idx: int) -> str:
+def _slide_infographic(scene: dict, size, dest: Path, idx: int, opts: dict) -> str:
     """인포그래픽 슬라이드: 제목 + 불릿."""
     w, h = size
     c1, c2 = PALETTE[idx % len(PALETTE)]
     img = _gradient(size, c1, tuple(int(v * 0.4) for v in c2))
     d = ImageDraw.Draw(img)
     scale = w / 1920 if w >= h else w / 1080
-    title_f, body_f = _font(FONT_BOLD, int(76 * scale)), _font(FONT_REGULAR, int(52 * scale))
+    title_f, body_f = _font(opts["bold"], int(76 * scale)), _font(opts["regular"], int(52 * scale))
     margin, y = int(w * 0.08), int(h * 0.16)
     d.rectangle([margin, y - int(20 * scale), margin + int(12 * scale), y + int(90 * scale)], fill=c2)
     for line in _wrap(d, scene.get("caption", ""), title_f, w - margin * 2 - int(40 * scale)):
@@ -177,13 +198,13 @@ def _slide_infographic(scene: dict, size, dest: Path, idx: int) -> str:
     return str(dest)
 
 
-def _make_fallback(scene: dict, size, dest: Path, idx: int) -> str:
+def _make_fallback(scene: dict, size, dest: Path, idx: int, opts: dict) -> str:
     """스톡영상이 없을 때 쓰는 배경 이미지."""
     w, h = size
     c1, c2 = PALETTE[idx % len(PALETTE)]
     img = _gradient(size, c1, tuple(min(255, int(v * 0.6)) for v in c2))
     d = ImageDraw.Draw(img)
-    f = _font(FONT_BOLD, int(w * 0.05))
+    f = _font(opts["bold"], int(w * 0.05))
     lines = _wrap(d, scene.get("caption", ""), f, int(w * 0.8))
     y = h // 2 - len(lines) * int(w * 0.035)
     for line in lines:
@@ -193,27 +214,27 @@ def _make_fallback(scene: dict, size, dest: Path, idx: int) -> str:
     return str(dest)
 
 
-def _make_overlay(scene: dict, size, style: str, dest: Path, idx: int) -> str | None:
+def _make_overlay(scene: dict, size, style: str, dest: Path, idx: int, opts: dict) -> str | None:
     if style in SLIDE_STYLES:
         return None
     w, h = size
     img = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     if style == "news":
-        _draw_news_banner(d, scene, w, h)
+        _draw_news_banner(d, scene, w, h, opts)
     elif style == "documentary":
-        _draw_letterbox(d, scene, w, h)
+        _draw_letterbox(d, scene, w, h, opts)
     else:
         if style in ("ranking", "tutorial") and scene.get("label"):
-            _draw_badge(d, scene["label"], w, h)
-        _draw_subtitle(d, scene, w, h)
+            _draw_badge(d, scene["label"], w, h, opts)
+        _draw_subtitle(d, scene, w, h, opts)
     img.save(dest)
     return str(dest)
 
 
-def _draw_badge(d, label: str, w: int, h: int):
+def _draw_badge(d, label: str, w: int, h: int, opts: dict):
     """랭킹/튜토리얼 좌상단 뱃지 (TOP 3, STEP 1 등)."""
-    f = _font(FONT_BOLD, int(w * 0.042))
+    f = _font(opts["bold"], int(w * 0.042))
     m, pad = int(w * 0.045), int(w * 0.018)
     tw = d.textlength(label, font=f)
     d.rounded_rectangle([m, m, m + tw + pad * 2, m + int(w * 0.042) + pad * 2],
@@ -221,44 +242,55 @@ def _draw_badge(d, label: str, w: int, h: int):
     d.text((m + pad, m + pad), label, font=f, fill=(255, 255, 255))
 
 
-def _draw_letterbox(d, scene: dict, w: int, h: int):
+def _draw_letterbox(d, scene: dict, w: int, h: int, opts: dict):
     """다큐멘터리: 시네마틱 상하 블랙바 + 중앙 하단 자막."""
     bar = int(h * 0.10)
     d.rectangle([0, 0, w, bar], fill=(0, 0, 0, 255))
     d.rectangle([0, h - bar, w, h], fill=(0, 0, 0, 255))
-    f = _font(FONT_REGULAR, int(w * 0.032))
+    f = _font(opts["regular"], int(w * 0.032 * opts["scale"]))
     lines = _wrap(d, scene.get("caption", ""), f, int(w * 0.8))
-    lh = int(w * 0.046)
+    lh = int(w * 0.046 * opts["scale"])
     y = h - bar - len(lines) * lh - int(h * 0.03)
     for line in lines:
         x = (w - d.textlength(line, font=f)) / 2
         d.text((x + 2, y + 2), line, font=f, fill=(0, 0, 0, 210))
-        d.text((x, y), line, font=f, fill=(255, 255, 255))
+        d.text((x, y), line, font=f, fill=(*opts["color"], 255))
         y += lh
 
 
-def _draw_subtitle(d, scene: dict, w: int, h: int):
-    f = _font(FONT_BOLD, int(w * 0.038))
+def _draw_subtitle(d, scene: dict, w: int, h: int, opts: dict):
+    """하단 자막: 박스형/외곽선형/그림자형."""
+    size = int(w * 0.038 * opts["scale"])
+    f = _font(opts["bold"], size)
     lines = _wrap(d, scene.get("caption", ""), f, int(w * 0.85))
-    lh = int(w * 0.052)
+    lh = int(w * 0.052 * opts["scale"])
     y = h - int(h * 0.10) - len(lines) * lh
+    color = (*opts["color"], 255)
     for line in lines:
         tw = d.textlength(line, font=f)
         x = (w - tw) / 2
-        d.rounded_rectangle([x - 24, y - 8, x + tw + 24, y + lh], radius=14, fill=(0, 0, 0, 170))
-        d.text((x, y), line, font=f, fill=(255, 255, 255))
+        if opts["mode"] == "box":
+            d.rounded_rectangle([x - 24, y - 8, x + tw + 24, y + lh], radius=14, fill=(0, 0, 0, 170))
+            d.text((x, y), line, font=f, fill=color)
+        elif opts["mode"] == "outline":
+            d.text((x, y), line, font=f, fill=color,
+                   stroke_width=max(2, int(size * 0.09)), stroke_fill=(0, 0, 0, 255))
+        else:  # shadow
+            off = max(2, int(size * 0.06))
+            d.text((x + off, y + off), line, font=f, fill=(0, 0, 0, 200))
+            d.text((x, y), line, font=f, fill=color)
         y += lh + 10
 
 
-def _draw_news_banner(d, scene: dict, w: int, h: int):
+def _draw_news_banner(d, scene: dict, w: int, h: int, opts: dict):
     bar_h = int(h * 0.11)
     top = h - int(h * 0.06) - bar_h
     d.rectangle([0, top, w, top + bar_h], fill=(15, 20, 35, 235))
-    tag_f = _font(FONT_BOLD, int(bar_h * 0.34))
+    tag_f = _font(opts["bold"], int(bar_h * 0.34))
     tag_w = int(d.textlength("속보", font=tag_f)) + int(bar_h * 0.5)
     d.rectangle([0, top, tag_w, top + bar_h], fill=(200, 30, 40, 255))
     d.text((int(bar_h * 0.25), top + int(bar_h * 0.28)), "속보", font=tag_f, fill=(255, 255, 255))
-    head_f = _font(FONT_BOLD, int(bar_h * 0.36))
+    head_f = _font(opts["bold"], int(bar_h * 0.36))
     text = scene.get("headline") or scene.get("caption", "")
     lines = _wrap(d, text, head_f, w - tag_w - int(bar_h * 0.8))
     d.text((tag_w + int(bar_h * 0.3), top + int(bar_h * 0.27)), lines[0] if lines else "", font=head_f, fill=(255, 255, 255))

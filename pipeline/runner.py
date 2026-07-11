@@ -50,7 +50,7 @@ def _run(job: dict):
 
     _set(job, "비주얼 수집/생성 중", 45)
     prepare_visuals(script["scenes"], p["format"], p["style"], size, workdir,
-                    lambda m: _log(job, m), p.get("assets", []))
+                    lambda m: _log(job, m), p.get("assets", []), p.get("caption"))
 
     _set(job, "영상 조립 중 (FFmpeg)", 65)
     bgm = p.get("bgm", [])
@@ -60,7 +60,9 @@ def _run(job: dict):
                             bgm[0]["path"] if bgm else None)
 
     _set(job, "썸네일 생성 중", 92)
-    job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir)
+    from .fonts import resolve
+    bold_font = resolve((p.get("caption") or {}).get("font", ""))[1]
+    job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir, bold_font)
 
 
 def _set(job: dict, stage: str, progress: int):

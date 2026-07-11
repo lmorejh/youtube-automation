@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 import time
 
-from pipeline import editor, runner, store, upload
+from pipeline import editor, fonts, runner, store, upload
 from pipeline.config import APP_PASSWORD, DEFAULT_VOICE, OUTPUT_DIR
 
 app = FastAPI(title="YouTube 자동화")
@@ -68,11 +68,18 @@ def index():
     return FileResponse(BASE / "static" / "index.html")
 
 
+@app.get("/api/fonts")
+def list_fonts():
+    return fonts.list_fonts()
+
+
 @app.post("/api/jobs")
 async def create_job(
     topic: str = Form(...), format: str = Form("long"), style: str = Form("realistic"),
     reference_urls: str = Form(""), extra: str = Form(""), voice: str = Form(DEFAULT_VOICE),
     source_text: str = Form(""), files: list[UploadFile] = File(default=[]),
+    font: str = Form(""), caption_size: str = Form("normal"),
+    caption_color: str = Form("#ffffff"), caption_style: str = Form("box"),
 ):
     if not topic.strip():
         raise HTTPException(400, "주제를 입력하세요")
@@ -81,7 +88,9 @@ async def create_job(
     params = {"topic": topic, "format": format, "style": style,
               "reference_urls": [u.strip() for u in reference_urls.splitlines() if u.strip()],
               "extra": extra, "voice": voice, "source_text": source_text,
-              "assets": visuals, "bgm": bgm}
+              "assets": visuals, "bgm": bgm,
+              "caption": {"font": font, "size": caption_size,
+                          "color": caption_color, "style": caption_style}}
     job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
            "progress": 0, "log": [], "params": params,
            "script": None, "video": None, "thumbnail": None,

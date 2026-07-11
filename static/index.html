@@ -83,6 +83,33 @@
       </div>
     </div>
 
+    <div class="row">
+      <div>
+        <label>자막 폰트</label>
+        <select id="font"></select>
+      </div>
+      <div>
+        <label>자막 크기</label>
+        <select id="capsize">
+          <option value="normal">보통</option>
+          <option value="large">크게</option>
+          <option value="small">작게</option>
+        </select>
+      </div>
+      <div>
+        <label>자막 스타일</label>
+        <select id="capstyle">
+          <option value="box">반투명 박스</option>
+          <option value="outline">외곽선 (예능 자막)</option>
+          <option value="shadow">그림자</option>
+        </select>
+      </div>
+      <div>
+        <label>자막 색상</label>
+        <input type="color" id="capcolor" value="#ffffff" style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer">
+      </div>
+    </div>
+
     <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
     <textarea id="refs" rows="2" placeholder="https://www.youtube.com/watch?v=..."></textarea>
 
@@ -104,6 +131,12 @@
 
 <script>
 let fmt = "long";
+
+(async () => {
+  const list = await (await fetch("/api/fonts")).json();
+  document.getElementById("font").innerHTML =
+    list.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
+})();
 document.querySelectorAll("#fmt button").forEach(b => b.onclick = () => {
   fmt = b.dataset.v;
   document.querySelectorAll("#fmt button").forEach(x => x.classList.toggle("on", x === b));
@@ -127,6 +160,10 @@ async function createJob() {
   fd.append("extra", document.getElementById("extra").value);
   fd.append("reference_urls", document.getElementById("refs").value);
   fd.append("source_text", document.getElementById("srctext").value);
+  fd.append("font", document.getElementById("font").value);
+  fd.append("caption_size", document.getElementById("capsize").value);
+  fd.append("caption_style", document.getElementById("capstyle").value);
+  fd.append("caption_color", document.getElementById("capcolor").value);
   for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;

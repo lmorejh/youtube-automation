@@ -7,26 +7,26 @@ from .config import FONT_BOLD
 from .media import probe_duration, run_ffmpeg
 
 
-def make_thumbnail(video: str, text: str, workdir: Path) -> str:
+def make_thumbnail(video: str, text: str, workdir: Path, font: str | None = None) -> str:
     frame = workdir / "frame.jpg"
     mid = probe_duration(video) * 0.3
     run_ffmpeg(["-ss", f"{mid:.2f}", "-i", video, "-frames:v", "1", "-q:v", "2", str(frame)])
     dest = workdir / "thumbnail.jpg"
-    _draw_text(frame, text, dest)
+    _draw_text(frame, text, dest, font or FONT_BOLD)
     return str(dest)
 
 
-def _draw_text(frame: Path, text: str, dest: Path):
+def _draw_text(frame: Path, text: str, dest: Path, font_path: str):
     img = Image.open(frame).convert("RGB")
     w, h = img.size
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
     d.rectangle([0, int(h * 0.55), w, h], fill=(0, 0, 0, 130))
     size = int(w * 0.09)
-    font = ImageFont.truetype(FONT_BOLD, size)
+    font = ImageFont.truetype(font_path, size)
     while size > 20 and d.textlength(text, font=font) > w * 0.92:
         size = int(size * 0.9)
-        font = ImageFont.truetype(FONT_BOLD, size)
+        font = ImageFont.truetype(font_path, size)
     tw = d.textlength(text, font=font)
     x, y = (w - tw) / 2, int(h * 0.66)
     d.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, 255))
