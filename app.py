@@ -56,6 +56,7 @@ class UploadRequest(BaseModel):
 
 class EditorCreate(BaseModel):
     job_id: str | None = None
+    fresh: bool = False         # true면 기존 세션 무시하고 새로 시작
 
 
 class RenderRequest(BaseModel):
@@ -174,7 +175,22 @@ def create_editor_session(req: EditorCreate):
         job = _find(req.job_id)
         if job["status"] != "done":
             raise HTTPException(400, "영상 생성이 완료된 작업만 편집할 수 있습니다")
+        if not req.fresh:  # 같은 작업의 기존 편집 세션이 있으면 이어서 편집
+            existing = [s for s in editor.SESSIONS.values() if s.get("job_id") == req.job_id]
+            if existing:
+                return _editor_public(max(existing, key=lambda s: s.get("updated", 0)))
     return _editor_public(editor.create_session(job))
+
+
+@app.put("/api/editor/sessions/{sid}/timeline")
+def save_editor_timeline(sid: str, req: RenderRequest):
+    """편집 중 타임라인 자동 저장 (재시작 후 복원용)."""
+    s = _esession(sid)
+    if any(item.get("clip_id") not in s["clips"] for item in req.timeline):
+        raise HTTPException(400, "타임라인에 알 수 없는 클립이 있습니다")
+    s["timeline"] = req.timeline
+    editor.save_session(s)
+    return {"ok": True}
 
 
 @app.get("/api/editor/sessions/{sid}")
@@ -281,6 +297,7 @@ def _editor_public(s: dict) -> dict:
     return {"id": s["id"], "size": s["size"], "status": s["status"], "progress": s["progress"],
             "error": s["error"], "has_result": bool(s["result"]), "job_id": s["job_id"],
             "upload_status": s["upload_status"], "youtube_url": s["youtube_url"],
+            "timeline": s.get("timeline", []),
             "clips": [{"id": c["id"], "name": c["name"], "duration": c["duration"]}
                       for c in s["clips"].values()]}
 

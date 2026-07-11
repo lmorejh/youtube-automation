@@ -1,4 +1,6 @@
 """클립 기반 간편 편집: 트림(자르기)·분할·순서변경·이어붙이기 후 재렌더링."""
+import json
+import time
 import uuid
 from pathlib import Path
 
@@ -6,7 +8,40 @@ from .assemble import ENCODE, _concat, _finalize
 from .config import FPS, OUTPUT_DIR, SIZES
 from .media import probe_duration, probe_streams, run_ffmpeg
 
-SESSIONS: dict[str, dict] = {}
+
+def save_session(session: dict):
+    session["updated"] = time.time()
+    path = Path(session["workdir"]) / "session.json"
+    path.write_text(json.dumps(session, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def load_sessions() -> dict[str, dict]:
+    sessions = {}
+    for f in OUTPUT_DIR.glob("edit_*/session.json"):
+        try:
+            s = _load_one(f)
+            if s["clips"]:
+                sessions[s["id"]] = s
+        except Exception:
+            continue
+    return sessions
+
+
+def _load_one(f: Path) -> dict:
+    s = json.loads(f.read_text(encoding="utf-8"))
+    s["clips"] = {cid: c for cid, c in s["clips"].items() if Path(c["path"]).exists()}
+    s["timeline"] = [it for it in s.get("timeline", []) if it.get("clip_id") in s["clips"]]
+    if s.get("status") == "rendering":  # 재시작으로 중단된 렌더링
+        s["status"] = "idle"
+        s["progress"] = 0
+    if s.get("result") and not Path(s["result"]).exists():
+        s["result"] = None
+    if s.get("upload_status") == "uploading":
+        s["upload_status"] = "upload_error"
+    return s
+
+
+SESSIONS: dict[str, dict] = load_sessions()
 
 
 def create_session(job: dict | None) -> dict:
@@ -14,11 +49,13 @@ def create_session(job: dict | None) -> dict:
     workdir = OUTPUT_DIR / f"edit_{sid}"
     workdir.mkdir(parents=True, exist_ok=True)
     session = {"id": sid, "workdir": str(workdir), "clips": {}, "size": None,
-               "bgm": None, "job_id": None, "status": "idle", "progress": 0,
+               "bgm": None, "job_id": None, "timeline": [], "updated": time.time(),
+               "status": "idle", "progress": 0,
                "error": None, "result": None, "upload_status": None, "youtube_url": None}
     if job:
         _load_job_clips(session, job)
     SESSIONS[sid] = session
+    save_session(session)
     return session
 
 
@@ -46,12 +83,13 @@ def add_clip(session: dict, path: str, name: str) -> dict:
     clip = {"id": cid, "path": path, "name": name, "duration": round(dur, 2),
             "thumb": str(thumb), "has_audio": info["has_audio"]}
     session["clips"][cid] = clip
+    save_session(session)
     return clip
 
 
 def render(session: dict, timeline: list[dict]):
     """timeline: [{clip_id, start, end}] 순서대로 잘라 이어붙여 final.mp4 생성."""
-    session.update(status="rendering", progress=0, error=None, result=None)
+    session.update(status="rendering", progress=0, error=None, result=None, timeline=timeline)
     try:
         parts = _render_parts(session, timeline)
         if not parts:
@@ -63,6 +101,7 @@ def render(session: dict, timeline: list[dict]):
         session.update(result=str(final), status="done", progress=100)
     except Exception as e:
         session.update(status="error", error=f"{type(e).__name__}: {e}")
+    save_session(session)
 
 
 def _render_parts(session: dict, timeline: list[dict]) -> list[Path]:

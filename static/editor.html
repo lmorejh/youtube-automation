@@ -66,7 +66,9 @@
 
   <div class="footer">
     <div class="total">총 길이 <b id="total">0.0초</b> · 조각 <b id="count">0</b>개</div>
+    <span class="hint" id="saved"></span>
     <div class="bar" id="pbar" style="display:none"><i id="pfill" style="width:0%"></i></div>
+    <button class="go" style="background:#111827; border:1px solid var(--line); font-weight:normal" onclick="resetTimeline()">↺ 초기화</button>
     <button class="go" id="render" onclick="render()">🎬 렌더링</button>
     <span class="err" id="err"></span>
   </div>
@@ -101,14 +103,50 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const fmt = t => `${Number(t).toFixed(1)}초`;
 
 async function init() {
-  const r = await fetch("/api/editor/sessions", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({job_id: qs.get("job") || null})});
-  if (!r.ok) { document.getElementById("err").textContent = (await r.json()).detail || "세션 생성 실패"; return; }
-  const s = await r.json();
+  let s = null;
+  if (qs.get("sid")) {
+    const r = await fetch(`/api/editor/sessions/${qs.get("sid")}`);
+    if (r.ok) s = await r.json();
+  }
+  if (!s) {
+    const r = await fetch("/api/editor/sessions", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({job_id: qs.get("job") || null})});
+    if (!r.ok) { document.getElementById("err").textContent = (await r.json()).detail || "세션 생성 실패"; return; }
+    s = await r.json();
+  }
   SID = s.id;
-  s.clips.forEach(c => { CLIPS[c.id] = c; items.push({uid: seq++, clip_id: c.id, start: 0, end: c.duration}); });
+  history.replaceState(null, "", `/edit?sid=${SID}`);
+  s.clips.forEach(c => CLIPS[c.id] = c);
+  if (s.timeline && s.timeline.length) {
+    items = s.timeline.map(t => ({uid: seq++, clip_id: t.clip_id, start: t.start, end: t.end}));
+    document.getElementById("saved").textContent = "이전 편집 상태를 불러왔습니다";
+  } else {
+    items = s.clips.map(c => ({uid: seq++, clip_id: c.id, start: 0, end: c.duration}));
+  }
   if (s.job_id) document.getElementById("applybox").style.display = "block";
   document.getElementById("uploadbox").style.display = "block";
+  if (s.has_result) {
+    document.getElementById("resultbox").style.display = "block";
+    document.getElementById("resultvideo").src = `/api/editor/sessions/${SID}/result?t=` + Date.now();
+  }
+  draw();
+}
+
+let saveTimer = null;
+function scheduleSave() {
+  if (!SID) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    const timeline = items.map(it => ({clip_id: it.clip_id, start: it.start, end: it.end}));
+    const r = await fetch(`/api/editor/sessions/${SID}/timeline`, {method:"PUT",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({timeline})});
+    if (r.ok) document.getElementById("saved").textContent = "✓ 자동 저장됨 " + new Date().toLocaleTimeString();
+  }, 600);
+}
+
+function resetTimeline() {
+  if (!confirm("타임라인을 원본 클립 상태로 되돌릴까요? (편집 내용이 사라집니다)")) return;
+  items = Object.values(CLIPS).map(c => ({uid: seq++, clip_id: c.id, start: 0, end: c.duration}));
   draw();
 }
 
@@ -163,6 +201,7 @@ function draw() {
     });
   });
   updateTotal();
+  scheduleSave();
 }
 
 function setRange(i, key, v) {
@@ -172,6 +211,7 @@ function setRange(i, key, v) {
   else it.end = Math.max(v, it.start + 0.1);
   document.getElementById(`ri-${i}`).textContent = `${fmt(it.start)} ~ ${fmt(it.end)} 사용 (${fmt(it.end - it.start)})`;
   updateTotal();
+  scheduleSave();
 }
 
 function move(i, d) {
