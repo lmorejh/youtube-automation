@@ -133,6 +133,39 @@
       </div>
     </div>
 
+    <div class="row">
+      <div>
+        <label>인트로</label>
+        <select id="intro">
+          <option value="none">없음</option>
+          <option value="title">타이틀 카드 (채널명+제목)</option>
+          <option value="minimal">미니멀 (채널명)</option>
+        </select>
+      </div>
+      <div>
+        <label>아웃트로</label>
+        <select id="outro">
+          <option value="none">없음</option>
+          <option value="subscribe">구독 유도 (구독·좋아요 버튼)</option>
+          <option value="thanks">감사 인사</option>
+        </select>
+      </div>
+      <div>
+        <label>채널명 (인트로/아웃트로에 표시)</label>
+        <input type="text" id="channel" placeholder="예: 담슬TV">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>인트로 영상 직접 업로드 (선택 — 템플릿 대신 사용, 소리 유지)</label>
+        <input type="file" id="introfile" accept="video/*" style="padding:8px">
+      </div>
+      <div>
+        <label>아웃트로 영상 직접 업로드 (선택)</label>
+        <input type="file" id="outrofile" accept="video/*" style="padding:8px">
+      </div>
+    </div>
+
     <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
     <textarea id="refs" rows="2" placeholder="https://www.youtube.com/watch?v=..."></textarea>
 
@@ -164,6 +197,10 @@ const VOICES = [["ko-KR-SunHiNeural", "선히 (여성)"], ["ko-KR-InJoonNeural",
 const TRANSITIONS = [["none", "없음 (바로 전환)"], ["fade", "디졸브 (겹치며 전환)"], ["fadeblack", "페이드 블랙"],
                      ["slideleft", "슬라이드"], ["wipeleft", "와이프"], ["circleopen", "원형 확대"]];
 const SFX_LIST = [["none", "없음"], ["whoosh", "휙 (스우시)"], ["ding", "딩 (벨)"], ["pop", "팝"]];
+const INTRO_LIST = [["none", "없음"], ["title", "타이틀 카드"], ["minimal", "미니멀"]];
+const OUTRO_LIST = [["none", "없음"], ["subscribe", "구독 유도"], ["thanks", "감사 인사"]];
+const introList = cur => cur === "custom" ? [...INTRO_LIST, ["custom", "직접 업로드한 영상"]] : INTRO_LIST;
+const outroList = cur => cur === "custom" ? [...OUTRO_LIST, ["custom", "직접 업로드한 영상"]] : OUTRO_LIST;
 const selOptions = (list, sel) => list.map(o =>
   `<option value="${o[0]}" ${o[0] === sel ? "selected" : ""}>${o[1]}</option>`).join("");
 let FONTS = [];
@@ -204,6 +241,13 @@ async function createJob() {
   fd.append("bgm_volume", document.getElementById("bgmvol").value);
   fd.append("transition", document.getElementById("transition").value);
   fd.append("sfx", document.getElementById("sfx").value);
+  fd.append("intro", document.getElementById("intro").value);
+  fd.append("outro", document.getElementById("outro").value);
+  fd.append("channel", document.getElementById("channel").value);
+  const introF = document.getElementById("introfile").files[0];
+  if (introF) fd.append("intro_file", introF);
+  const outroF = document.getElementById("outrofile").files[0];
+  if (outroF) fd.append("outro_file", outroF);
   for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;
@@ -227,6 +271,13 @@ async function doRerender(id) {
   fd.append("voice", document.getElementById("rr-voice-" + id).value);
   fd.append("transition", document.getElementById("rr-tr-" + id).value);
   fd.append("sfx", document.getElementById("rr-sfx-" + id).value);
+  fd.append("intro", document.getElementById("rr-intro-" + id).value);
+  fd.append("outro", document.getElementById("rr-outro-" + id).value);
+  fd.append("channel", document.getElementById("rr-ch-" + id).value);
+  const introF = document.getElementById("rr-introfile-" + id).files[0];
+  if (introF) fd.append("intro_file", introF);
+  const outroF = document.getElementById("rr-outrofile-" + id).files[0];
+  if (outroF) fd.append("outro_file", outroF);
   const bgmFile = document.getElementById("rr-bgmfile-" + id).files[0];
   if (bgmFile) fd.append("files", bgmFile);
   const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST", body: fd});
@@ -312,6 +363,17 @@ function jobCard(j) {
           <div><label>전환 효과음</label><select id="rr-sfx-${j.id}">
             ${selOptions(SFX_LIST, j.params.sfx || "none")}
           </select></div>
+          <div><label>인트로</label><select id="rr-intro-${j.id}">
+            ${selOptions(introList(j.params.intro), j.params.intro || "none")}
+          </select></div>
+          <div><label>아웃트로</label><select id="rr-outro-${j.id}">
+            ${selOptions(outroList(j.params.outro), j.params.outro || "none")}
+          </select></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <div><label>채널명</label><input type="text" id="rr-ch-${j.id}" value="${esc(j.params.channel || "")}" placeholder="인트로/아웃트로에 표시"></div>
+          <div><label>인트로 영상 업로드 (선택)</label><input type="file" id="rr-introfile-${j.id}" accept="video/*" style="padding:8px"></div>
+          <div><label>아웃트로 영상 업로드 (선택)</label><input type="file" id="rr-outrofile-${j.id}" accept="video/*" style="padding:8px"></div>
         </div>
         <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
       </details>

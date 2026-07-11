@@ -144,10 +144,12 @@ def _finalize(merged: Path, final: Path, bgm: str | None = None, bgm_volume: flo
 
 
 def _write_srt(scenes: list[dict], dest: Path):
-    t, rows = 0.0, []
-    for i, s in enumerate(scenes, 1):
+    t, n, rows = 0.0, 0, []
+    for s in scenes:
         end = t + s["duration"]
-        rows.append(f"{i}\n{_ts(t)} --> {_ts(end)}\n{s['narration']}\n")
+        if s.get("narration", "").strip():
+            n += 1
+            rows.append(f"{n}\n{_ts(t)} --> {_ts(end)}\n{s['narration']}\n")
         t = end
     dest.write_text("\n".join(rows), encoding="utf-8")
 

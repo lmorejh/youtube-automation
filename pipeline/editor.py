@@ -66,10 +66,14 @@ def _load_job_clips(session: dict, job: dict):
     session["size"] = list(SIZES[job["params"]["format"]])
     session["bgm"], session["bgm_volume"] = bgm_settings(job["params"])
     job_dir = Path(job["video"]).parent
-    for i, scene in enumerate(job["script"]["scenes"]):
+    p = job["params"]
+    names = (["인트로"] if p.get("intro", "none") != "none" else [])
+    names += [s.get("caption") or f"장면 {i + 1}" for i, s in enumerate(job["script"]["scenes"])]
+    names += (["아웃트로"] if p.get("outro", "none") != "none" else [])
+    for i, name in enumerate(names):
         clip = job_dir / f"clip_{i:02d}.mp4"
         if clip.exists():
-            add_clip(session, str(clip), scene.get("caption") or f"장면 {i + 1}")
+            add_clip(session, str(clip), name)
 
 
 def add_clip(session: dict, path: str, name: str) -> dict:

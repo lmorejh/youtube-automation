@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .assemble import assemble
 from .config import OUTPUT_DIR, SIZES
+from .intro_outro import build_intro, build_outro
 from .reference import analyze_references
 from .script_gen import generate_script
 from .store import save_job
@@ -56,8 +57,9 @@ def _run(job: dict):
     bgm_path, bgm_vol = bgm_settings(p)
     if bgm_path:
         _log(job, f"배경음악 적용: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
-    job["video"] = assemble(script["scenes"], size, workdir, lambda m: _log(job, m),
-                            bgm_path, bgm_vol, p.get("transition", "none"), p.get("sfx", "none"))
+    job["video"] = assemble(_full_scenes(job, size, workdir), size, workdir,
+                            lambda m: _log(job, m), bgm_path, bgm_vol,
+                            p.get("transition", "none"), p.get("sfx", "none"))
 
     _set(job, "썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)
@@ -98,11 +100,21 @@ def _rerender(job: dict, caption: dict, voice: str | None = None):
     bgm_path, bgm_vol = bgm_settings(p)
     if bgm_path:
         _log(job, f"배경음악: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
-    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m),
-                            bgm_path, bgm_vol, p.get("transition", "none"), p.get("sfx", "none"))
+    job["video"] = assemble(_full_scenes(job, size, workdir), size, workdir,
+                            lambda m: _log(job, m), bgm_path, bgm_vol,
+                            p.get("transition", "none"), p.get("sfx", "none"))
 
     _set(job, "재렌더: 썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)
+
+
+def _full_scenes(job: dict, size, workdir: Path) -> list[dict]:
+    """대본 장면 앞뒤에 인트로/아웃트로 장면을 붙인 최종 목록."""
+    intro = build_intro(job, size, workdir)
+    outro = build_outro(job, size, workdir)
+    if intro or outro:
+        _log(job, "추가: " + " + ".join(x for x, ok in [("인트로", intro), ("아웃트로", outro)] if ok))
+    return ([intro] if intro else []) + list(job["script"]["scenes"]) + ([outro] if outro else [])
 
 
 def make_job_thumbnail(job: dict, workdir: Path) -> str:

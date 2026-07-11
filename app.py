@@ -82,6 +82,8 @@ async def create_job(
     caption_color: str = Form("#ffffff"), caption_style: str = Form("box"),
     bgm_volume: str = Form("12"),
     transition: str = Form("none"), sfx: str = Form("none"),
+    intro: str = Form("none"), outro: str = Form("none"), channel: str = Form(""),
+    intro_file: UploadFile | None = File(None), outro_file: UploadFile | None = File(None),
 ):
     if not topic.strip():
         raise HTTPException(400, "주제를 입력하세요")
@@ -92,8 +94,14 @@ async def create_job(
               "extra": extra, "voice": voice, "source_text": source_text,
               "assets": visuals, "bgm": bgm, "bgm_volume": _parse_volume(bgm_volume),
               "transition": transition, "sfx": sfx,
+              "intro": intro, "outro": outro, "channel": channel,
               "caption": {"font": font, "size": caption_size,
                           "color": caption_color, "style": caption_style}}
+    for role, f in (("intro", intro_file), ("outro", outro_file)):
+        path = await _save_role_video(f, job_id, role)
+        if path:
+            params[role] = "custom"
+            params[f"{role}_video"] = path
     job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
            "progress": 0, "log": [], "params": params,
            "script": None, "video": None, "thumbnail": None,
@@ -101,6 +109,20 @@ async def create_job(
     JOBS[job_id] = job
     threading.Thread(target=runner.run_job, args=(job,), daemon=True).start()
     return {"id": job_id}
+
+
+async def _save_role_video(f: UploadFile | None, job_id: str, role: str) -> str | None:
+    """인트로/아웃트로 업로드 영상 저장."""
+    if not f or not f.filename:
+        return None
+    ext = Path(f.filename).suffix.lower()
+    if ext not in VIDEO_EXT:
+        raise HTTPException(400, f"{role}는 영상 파일만 가능합니다: {f.filename}")
+    dest_dir = OUTPUT_DIR / job_id / "assets"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{role}{ext}"
+    dest.write_bytes(await f.read())
+    return str(dest)
 
 
 async def _save_assets(files: list[UploadFile], job_id: str) -> tuple[list, list]:
@@ -179,6 +201,8 @@ async def rerender_job(
     color: str = Form("#ffffff"), style: str = Form("box"),
     bgm_use: str = Form("__keep__"), bgm_volume: str = Form(""),
     voice: str = Form(""), transition: str = Form("__keep__"), sfx: str = Form("__keep__"),
+    intro: str = Form("__keep__"), outro: str = Form("__keep__"), channel: str = Form("__keep__"),
+    intro_file: UploadFile | None = File(None), outro_file: UploadFile | None = File(None),
     files: list[UploadFile] = File(default=[]),
 ):
     """자막·BGM·음성 옵션만 바꿔 재렌더 (대본 재사용)."""
@@ -209,6 +233,15 @@ async def rerender_job(
         p["transition"] = transition
     if sfx != "__keep__":
         p["sfx"] = sfx
+    if channel != "__keep__":
+        p["channel"] = channel
+    for role, sel, f in (("intro", intro, intro_file), ("outro", outro, outro_file)):
+        path = await _save_role_video(f, job_id, role)
+        if path:
+            p[role] = "custom"
+            p[f"{role}_video"] = path
+        elif sel != "__keep__":
+            p[role] = sel
     caption = {"font": font, "size": size, "color": color, "style": style}
     job["status"] = "running"
     job["progress"] = 0
