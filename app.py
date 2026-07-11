@@ -228,6 +228,38 @@ def _parse_volume(v: str) -> float:
         return 0.12
 
 
+@app.post("/api/jobs/{job_id}/thumbnail")
+async def update_thumbnail(
+    job_id: str, text: str = Form(""), color: str = Form("#ffdc3c"),
+    pos: str = Form("30"), bg: str = Form("keep"),
+    files: list[UploadFile] = File(default=[]),
+):
+    """썸네일만 즉시 재생성 (영상 재렌더 없음)."""
+    job = _find(job_id)
+    if job["status"] == "running":
+        raise HTTPException(400, "작업이 진행 중입니다")
+    if not job.get("video") or not Path(job["video"]).exists():
+        raise HTTPException(400, "영상이 없어 썸네일을 만들 수 없습니다")
+    p = job["params"]
+    prev = p.get("thumb") or {}
+    thumb = {"text": text, "color": color, "pos": _parse_volume(pos),
+             "image": None if bg == "frame" else prev.get("image")}
+    for f in files:
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in IMAGE_EXT:
+            raise HTTPException(400, f"이미지 파일만 배경으로 쓸 수 있습니다: {f.filename}")
+        dest_dir = OUTPUT_DIR / job_id / "assets"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"thumb_bg{ext}"
+        dest.write_bytes(await f.read())
+        thumb["image"] = str(dest)
+    p["thumb"] = thumb
+    job["thumbnail"] = runner.make_job_thumbnail(job, OUTPUT_DIR / job_id)
+    job["log"].append("🖼 썸네일 재생성됨")
+    store.save_job(job)
+    return {"ok": True}
+
+
 # ---------- 간편 편집기 ----------
 
 @app.get("/edit")

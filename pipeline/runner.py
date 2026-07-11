@@ -60,9 +60,7 @@ def _run(job: dict):
                             bgm_path, bgm_vol)
 
     _set(job, "썸네일 생성 중", 92)
-    from .fonts import resolve
-    bold_font = resolve((p.get("caption") or {}).get("font", ""))[1]
-    job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir, bold_font)
+    job["thumbnail"] = make_job_thumbnail(job, workdir)
 
 
 def rerender_job(job: dict, caption: dict, voice: str | None = None):
@@ -103,9 +101,19 @@ def _rerender(job: dict, caption: dict, voice: str | None = None):
     job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m), bgm_path, bgm_vol)
 
     _set(job, "재렌더: 썸네일 생성 중", 92)
+    job["thumbnail"] = make_job_thumbnail(job, workdir)
+
+
+def make_job_thumbnail(job: dict, workdir: Path) -> str:
+    """작업의 썸네일 설정(params.thumb)을 반영해 썸네일 생성."""
     from .fonts import resolve
-    job["thumbnail"] = make_thumbnail(job["video"], job["script"].get("thumbnail_text", "")[:12],
-                                      workdir, resolve(caption.get("font", ""))[1])
+
+    p = job["params"]
+    t = p.get("thumb") or {}
+    text = t["text"] if "text" in t else job["script"].get("thumbnail_text", "")[:12]
+    font = resolve((p.get("caption") or {}).get("font", ""))[1]
+    return make_thumbnail(job["video"], text, workdir, font,
+                          t.get("color", "#ffdc3c"), t.get("pos", 0.3), t.get("image"))
 
 
 def bgm_settings(p: dict) -> tuple[str | None, float]:

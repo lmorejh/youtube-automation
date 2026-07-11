@@ -205,6 +205,19 @@ async function doRerender(id) {
   refresh();
 }
 
+async function doThumbnail(id) {
+  const fd = new FormData();
+  fd.append("text", document.getElementById("th-text-" + id).value);
+  fd.append("color", document.getElementById("th-color-" + id).value);
+  fd.append("pos", document.getElementById("th-pos-" + id).value);
+  fd.append("bg", document.getElementById("th-bg-" + id).value);
+  const f = document.getElementById("th-file-" + id).files[0];
+  if (f) fd.append("files", f);
+  const r = await fetch(`/api/jobs/${id}/thumbnail`, {method:"POST", body: fd});
+  if (!r.ok) return alert((await r.json()).detail || "썸네일 재생성 실패");
+  refresh();
+}
+
 async function doUpload(id) {
   const privacy = document.getElementById("pv-" + id).value;
   const title = document.getElementById("ti-" + id).value;
@@ -227,6 +240,8 @@ function jobCard(j) {
   if (j.status === "done") {
     const cap = j.params.caption || {};
     const bgmVol = Math.round((j.params.bgm_volume ?? 0.12) * 100);
+    const thumb = j.params.thumb || {};
+    const thumbPos = Math.round((thumb.pos ?? 0.3) * 100);
     html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료
         <a class="link" href="/edit?job=${j.id}" style="margin-left:10px">✂️ 편집하기</a></div>
       <video controls preload="metadata" src="/api/jobs/${j.id}/video?t=${j.log.length}"></video>
@@ -262,6 +277,34 @@ function jobCard(j) {
             <input type="file" id="rr-bgmfile-${j.id}" accept="audio/*" style="padding:8px"></div>
         </div>
         <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
+      </details>
+      <details class="rrbox">
+        <summary>🖼 썸네일 편집 (영상 재렌더 없이 즉시 적용)</summary>
+        <div style="display:flex; gap:16px; margin-top:10px; flex-wrap:wrap">
+          <img src="/api/jobs/${j.id}/thumbnail?t=${j.log.length}"
+            style="width:260px; max-height:260px; object-fit:contain; border-radius:8px; background:#000; align-self:flex-start">
+          <div style="flex:1; min-width:260px">
+            <label>썸네일 문구 (비우면 문구 없음)</label>
+            <input type="text" id="th-text-${j.id}" value="${esc("text" in thumb ? thumb.text : (j.script?.thumbnail_text || ""))}">
+            <div class="row">
+              <div><label>문구 색상</label><input type="color" id="th-color-${j.id}" value="${thumb.color || "#ffdc3c"}"
+                style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer"></div>
+              <div><label>프레임 위치: <b id="th-posv-${j.id}" style="color:var(--ok)">${thumbPos}%</b> 지점</label>
+                <input type="range" id="th-pos-${j.id}" min="0" max="95" value="${thumbPos}"
+                  style="width:100%; accent-color:var(--accent); margin-top:8px"
+                  oninput="document.getElementById('th-posv-${j.id}').textContent = this.value + '%'"></div>
+            </div>
+            <div class="row">
+              <div><label>배경</label><select id="th-bg-${j.id}">
+                <option value="keep">유지 (현재 배경)</option>
+                <option value="frame">영상 프레임에서 다시 추출</option>
+              </select></div>
+              <div><label>새 배경 이미지 (선택)</label>
+                <input type="file" id="th-file-${j.id}" accept="image/*" style="padding:8px"></div>
+            </div>
+            <button class="btn2" style="margin-top:12px" onclick="doThumbnail('${j.id}')">🖼 썸네일 재생성</button>
+          </div>
+        </div>
       </details>
       <div class="upbox">
         <label>업로드 제목</label><input type="text" id="ti-${j.id}" value="${esc(j.script?.title || "")}">
