@@ -26,6 +26,7 @@
   .grip { cursor:grab; color:var(--sub); font-size:18px; padding:4px 2px; user-select:none; }
   .range-row { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:var(--sub); }
   .range-row input[type=range] { flex:1; accent-color:var(--accent); }
+  .range-row input[type=number] { width:74px; background:#111827; border:1px solid var(--line); border-radius:6px; color:var(--text); padding:4px 6px; font-size:12px; font-family:inherit; }
   .rangeinfo { font-size:12px; color:var(--ok); margin-top:4px; }
   .btns { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
   .btns button { background:#111827; border:1px solid var(--line); border-radius:7px; color:var(--text); padding:6px 10px; font-size:12px; cursor:pointer; font-family:inherit; }
@@ -252,10 +253,14 @@ function draw() {
       <video preload="metadata" controls muted src="/api/editor/sessions/${SID}/clips/${c.id}/video#t=${it.start}"></video>
       <div class="body">
         <h4>${i + 1}. ${esc(c.name)} <span style="color:var(--sub)">(원본 ${fmt(c.duration)})</span></h4>
-        <div class="range-row">시작 <input type="range" min="0" max="${c.duration}" step="0.1" value="${it.start}"
-          oninput="setRange(${i}, 'start', this.value)"></div>
-        <div class="range-row">끝&nbsp;&nbsp; <input type="range" min="0" max="${c.duration}" step="0.1" value="${it.end}"
-          oninput="setRange(${i}, 'end', this.value)"></div>
+        <div class="range-row">시작 <input type="range" id="sl-${i}-start" min="0" max="${c.duration}" step="0.1" value="${it.start}"
+          oninput="setRange(${i}, 'start', this.value)">
+          <input type="number" id="num-${i}-start" min="0" max="${c.duration}" step="0.1" value="${it.start}"
+          onchange="setRange(${i}, 'start', this.value)">초</div>
+        <div class="range-row">끝&nbsp;&nbsp; <input type="range" id="sl-${i}-end" min="0" max="${c.duration}" step="0.1" value="${it.end}"
+          oninput="setRange(${i}, 'end', this.value)">
+          <input type="number" id="num-${i}-end" min="0" max="${c.duration}" step="0.1" value="${it.end}"
+          onchange="setRange(${i}, 'end', this.value)">초</div>
         <div class="rangeinfo" id="ri-${i}">${fmt(it.start)} ~ ${fmt(it.end)} 사용 (${fmt(it.end - it.start)})</div>
         <div class="btns">
           <button onclick="move(${i}, -1)">▲ 위로</button>
@@ -286,9 +291,15 @@ function draw() {
 
 function setRange(i, key, v) {
   v = parseFloat(v);
-  const it = items[i];
+  const it = items[i], c = CLIPS[it.clip_id];
+  if (isNaN(v)) v = it[key];
+  v = Math.round(Math.max(0, Math.min(v, c.duration)) * 10) / 10;
   if (key === "start") it.start = Math.min(v, it.end - 0.1);
   else it.end = Math.max(v, it.start + 0.1);
+  for (const k of ["start", "end"]) {
+    document.getElementById(`sl-${i}-${k}`).value = it[k];
+    document.getElementById(`num-${i}-${k}`).value = it[k];
+  }
   document.getElementById(`ri-${i}`).textContent = `${fmt(it.start)} ~ ${fmt(it.end)} 사용 (${fmt(it.end - it.start)})`;
   updateTotal();
   scheduleSave();
