@@ -176,16 +176,17 @@ async def rerender_job(
     job_id: str, font: str = Form(""), size: str = Form("normal"),
     color: str = Form("#ffffff"), style: str = Form("box"),
     bgm_use: str = Form("__keep__"), bgm_volume: str = Form(""),
-    files: list[UploadFile] = File(default=[]),
+    voice: str = Form(""), files: list[UploadFile] = File(default=[]),
 ):
-    """자막·BGM 옵션만 바꿔 재렌더 (대본·나레이션 재사용)."""
+    """자막·BGM·음성 옵션만 바꿔 재렌더 (대본 재사용)."""
     job = _find(job_id)
     if job["status"] == "running":
         raise HTTPException(400, "작업이 진행 중입니다")
     if not job.get("script"):
         raise HTTPException(400, "대본이 없어 재렌더할 수 없습니다")
-    if any(not Path(s.get("audio", "")).exists() for s in job["script"]["scenes"]):
-        raise HTTPException(400, "나레이션 파일이 삭제되어 재렌더할 수 없습니다")
+    voice_changed = bool(voice) and voice != job["params"].get("voice")
+    if not voice_changed and any(not Path(s.get("audio", "")).exists() for s in job["script"]["scenes"]):
+        raise HTTPException(400, "나레이션 파일이 삭제되어 재렌더할 수 없습니다 (음성을 바꾸면 다시 생성됩니다)")
     p = job["params"]
     for f in files:  # 새 BGM 업로드 시 목록에 추가하고 그 파일을 선택
         ext = Path(f.filename or "").suffix.lower()
@@ -204,7 +205,8 @@ async def rerender_job(
     caption = {"font": font, "size": size, "color": color, "style": style}
     job["status"] = "running"
     job["progress"] = 0
-    threading.Thread(target=runner.rerender_job, args=(job, caption), daemon=True).start()
+    threading.Thread(target=runner.rerender_job, args=(job, caption, voice or None),
+                     daemon=True).start()
     return {"ok": True}
 
 

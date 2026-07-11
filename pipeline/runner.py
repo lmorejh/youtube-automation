@@ -65,13 +65,13 @@ def _run(job: dict):
     job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir, bold_font)
 
 
-def rerender_job(job: dict, caption: dict):
-    """대본·나레이션은 그대로 두고 자막 옵션만 바꿔 영상을 다시 조립."""
+def rerender_job(job: dict, caption: dict, voice: str | None = None):
+    """대본은 그대로 두고 자막·BGM·음성 옵션만 바꿔 영상을 다시 조립."""
     try:
         job["params"]["caption"] = caption
         job["upload_status"] = None
         job["youtube_url"] = None
-        _rerender(job, caption)
+        _rerender(job, caption, voice)
         job["status"] = "done"
         _set(job, "재렌더 완료", 100)
     except Exception as e:
@@ -81,13 +81,19 @@ def rerender_job(job: dict, caption: dict):
     save_job(job)
 
 
-def _rerender(job: dict, caption: dict):
+def _rerender(job: dict, caption: dict, voice: str | None = None):
     p = job["params"]
     workdir = OUTPUT_DIR / job["id"]
     size = SIZES[p["format"]]
     scenes = job["script"]["scenes"]
 
-    _set(job, "재렌더: 자막·슬라이드 재생성 중", 20)
+    if voice and voice != p.get("voice"):
+        p["voice"] = voice
+        _set(job, "재렌더: 나레이션 재생성 중 (TTS)", 10)
+        synthesize_scenes(scenes, voice, workdir)
+        _log(job, f"나레이션 음성 변경 → 총 {sum(s['duration'] for s in scenes):.0f}초")
+
+    _set(job, "재렌더: 자막·슬라이드 재생성 중", 30)
     refresh_captions(scenes, p["style"], size, workdir, caption)
 
     _set(job, "재렌더: 영상 조립 중 (FFmpeg)", 45)

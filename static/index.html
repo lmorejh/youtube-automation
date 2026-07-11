@@ -139,6 +139,8 @@
 <script>
 let fmt = "long";
 
+const VOICES = [["ko-KR-SunHiNeural", "선히 (여성)"], ["ko-KR-InJoonNeural", "인준 (남성)"],
+                ["ko-KR-HyunsuMultilingualNeural", "현수 (남성)"]];
 let FONTS = [];
 (async () => {
   FONTS = await (await fetch("/api/fonts")).json();
@@ -195,6 +197,7 @@ async function doRerender(id) {
   fd.append("color", document.getElementById("rr-color-" + id).value);
   fd.append("bgm_use", document.getElementById("rr-bgm-" + id).value);
   fd.append("bgm_volume", document.getElementById("rr-vol-" + id).value);
+  fd.append("voice", document.getElementById("rr-voice-" + id).value);
   const bgmFile = document.getElementById("rr-bgmfile-" + id).files[0];
   if (bgmFile) fd.append("files", bgmFile);
   const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST", body: fd});
@@ -243,6 +246,9 @@ function jobCard(j) {
             style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer"></div>
         </div>
         <div class="row" style="margin-top:4px">
+          <div><label>나레이션 음성 (변경 시 TTS 재생성 — 시간 소요)</label><select id="rr-voice-${j.id}">
+            ${VOICES.map(v => `<option value="${v[0]}" ${v[0] === (j.params.voice || "") ? "selected" : ""}>${v[1]}</option>`).join("")}
+          </select></div>
           <div><label>배경음악</label><select id="rr-bgm-${j.id}">
             <option value="__keep__">현재 설정 유지</option>
             <option value="">없음 (BGM 제거)</option>
