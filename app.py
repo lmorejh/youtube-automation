@@ -193,6 +193,22 @@ def save_editor_timeline(sid: str, req: RenderRequest):
     return {"ok": True}
 
 
+@app.get("/api/editor/sessions")
+def list_editor_sessions():
+    """편집 세션 목록 (최근 수정순) — 이어서 편집하기용."""
+    out = []
+    for s in sorted(editor.SESSIONS.values(), key=lambda x: x.get("updated", 0), reverse=True):
+        tl = s.get("timeline", [])
+        job = JOBS.get(s.get("job_id") or "")
+        out.append({"id": s["id"], "job_id": s.get("job_id"),
+                    "topic": job["params"]["topic"] if job else None,
+                    "updated": s.get("updated", 0), "clip_count": len(s["clips"]),
+                    "piece_count": len(tl),
+                    "total": round(sum(i.get("end", 0) - i.get("start", 0) for i in tl), 1),
+                    "has_result": bool(s.get("result"))})
+    return out
+
+
 @app.get("/api/editor/sessions/{sid}")
 def get_editor_session(sid: str):
     return _editor_public(_esession(sid))
