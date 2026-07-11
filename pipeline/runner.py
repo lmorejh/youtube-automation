@@ -10,7 +10,7 @@ from .script_gen import generate_script
 from .store import save_job
 from .thumbnail import make_thumbnail
 from .tts import synthesize_scenes
-from .visuals import prepare_visuals
+from .visuals import prepare_visuals, refresh_captions
 
 
 def run_job(job: dict):
@@ -63,6 +63,42 @@ def _run(job: dict):
     from .fonts import resolve
     bold_font = resolve((p.get("caption") or {}).get("font", ""))[1]
     job["thumbnail"] = make_thumbnail(job["video"], script.get("thumbnail_text", "")[:12], workdir, bold_font)
+
+
+def rerender_job(job: dict, caption: dict):
+    """대본·나레이션은 그대로 두고 자막 옵션만 바꿔 영상을 다시 조립."""
+    try:
+        job["params"]["caption"] = caption
+        job["upload_status"] = None
+        job["youtube_url"] = None
+        _rerender(job, caption)
+        job["status"] = "done"
+        _set(job, "재렌더 완료", 100)
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = f"{type(e).__name__}: {e}"
+        _log(job, f"재렌더 오류: {job['error']}")
+    save_job(job)
+
+
+def _rerender(job: dict, caption: dict):
+    p = job["params"]
+    workdir = OUTPUT_DIR / job["id"]
+    size = SIZES[p["format"]]
+    scenes = job["script"]["scenes"]
+
+    _set(job, "재렌더: 자막·슬라이드 재생성 중", 20)
+    refresh_captions(scenes, p["style"], size, workdir, caption)
+
+    _set(job, "재렌더: 영상 조립 중 (FFmpeg)", 45)
+    bgm = p.get("bgm", [])
+    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m),
+                            bgm[0]["path"] if bgm else None)
+
+    _set(job, "재렌더: 썸네일 생성 중", 92)
+    from .fonts import resolve
+    job["thumbnail"] = make_thumbnail(job["video"], job["script"].get("thumbnail_text", "")[:12],
+                                      workdir, resolve(caption.get("font", ""))[1])
 
 
 def _set(job: dict, stage: str, progress: int):

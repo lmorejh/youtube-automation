@@ -39,6 +39,17 @@ def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Pat
             scene["image"] = _make_fallback(scene, size, workdir / f"bg_{i:02d}.png", i, opts)
 
 
+def refresh_captions(scenes: list[dict], style: str, size, workdir: Path, caption: dict | None):
+    """재렌더용: 자막 오버레이와 생성형 슬라이드만 다시 그림 (스톡영상·업로드 소스는 유지)."""
+    opts = _caption_opts(caption)
+    for i, scene in enumerate(scenes):
+        scene["overlay"] = _make_overlay(scene, size, style, workdir / f"ov_{i:02d}.png", i, opts)
+        if style in SLIDE_STYLES:
+            scene["image"] = _make_slide(scene, size, style, workdir / f"slide_{i:02d}.png", i, opts)
+        elif scene.get("image") and Path(scene["image"]).name.startswith("bg_"):
+            scene["image"] = _make_fallback(scene, size, Path(scene["image"]), i, opts)
+
+
 def _caption_opts(caption: dict | None) -> dict:
     """자막 옵션: 폰트/크기 배율/색상/표시 방식."""
     caption = caption or {}

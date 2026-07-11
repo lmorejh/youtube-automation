@@ -36,6 +36,9 @@
   input[type=file] { width:100%; background:#111827; border:1px dashed var(--line); border-radius:8px; color:var(--sub); padding:12px; font-size:13px; font-family:inherit; cursor:pointer; }
   .filelist { font-size:12px; color:var(--sub); margin-top:6px; line-height:1.7; }
   .filelist b { color:var(--text); font-weight:normal; }
+  .rrbox { margin-top:12px; border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+  .rrbox summary { font-size:13px; color:var(--sub); cursor:pointer; user-select:none; }
+  .rrbox[open] summary { color:var(--text); margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -132,11 +135,14 @@
 <script>
 let fmt = "long";
 
+let FONTS = [];
 (async () => {
-  const list = await (await fetch("/api/fonts")).json();
-  document.getElementById("font").innerHTML =
-    list.map(f => `<option value="${f.id}">${f.name}</option>`).join("");
+  FONTS = await (await fetch("/api/fonts")).json();
+  document.getElementById("font").innerHTML = fontOptions("");
 })();
+
+const fontOptions = sel => FONTS.map(f =>
+  `<option value="${f.id}" ${f.id === sel ? "selected" : ""}>${f.name}</option>`).join("");
 document.querySelectorAll("#fmt button").forEach(b => b.onclick = () => {
   fmt = b.dataset.v;
   document.querySelectorAll("#fmt button").forEach(x => x.classList.toggle("on", x === b));
@@ -175,6 +181,20 @@ async function createJob() {
   refresh();
 }
 
+async function doRerender(id) {
+  if (!confirm("기존 영상을 새 자막 설정으로 다시 만듭니다.\n(대본과 나레이션은 그대로 유지됩니다)\n\n계속할까요?")) return;
+  const body = {
+    font: document.getElementById("rr-font-" + id).value,
+    size: document.getElementById("rr-size-" + id).value,
+    style: document.getElementById("rr-style-" + id).value,
+    color: document.getElementById("rr-color-" + id).value,
+  };
+  const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  if (!r.ok) return alert((await r.json()).detail || "재렌더 실패");
+  refresh();
+}
+
 async function doUpload(id) {
   const privacy = document.getElementById("pv-" + id).value;
   const title = document.getElementById("ti-" + id).value;
@@ -195,9 +215,27 @@ function jobCard(j) {
     html += `<div class="bar"><i style="width:${j.progress}%"></i></div><div class="stage">⏳ ${esc(j.stage)} (${j.progress}%)</div>`;
   if (j.status === "error") html += `<div class="err">❌ ${esc(j.error || "")}</div>`;
   if (j.status === "done") {
+    const cap = j.params.caption || {};
     html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료
         <a class="link" href="/edit?job=${j.id}" style="margin-left:10px">✂️ 편집하기</a></div>
       <video controls preload="metadata" src="/api/jobs/${j.id}/video?t=${j.log.length}"></video>
+      <details class="rrbox">
+        <summary>🔁 자막 바꿔서 재렌더 (대본·나레이션 유지)</summary>
+        <div class="row" style="margin-top:10px">
+          <div><label>폰트</label><select id="rr-font-${j.id}">${fontOptions(cap.font || "")}</select></div>
+          <div><label>크기</label><select id="rr-size-${j.id}">
+            ${["normal:보통", "large:크게", "small:작게"].map(o => { const [v, n] = o.split(":");
+              return `<option value="${v}" ${v === (cap.size || "normal") ? "selected" : ""}>${n}</option>`; }).join("")}
+          </select></div>
+          <div><label>스타일</label><select id="rr-style-${j.id}">
+            ${["box:반투명 박스", "outline:외곽선", "shadow:그림자"].map(o => { const [v, n] = o.split(":");
+              return `<option value="${v}" ${v === (cap.style || "box") ? "selected" : ""}>${n}</option>`; }).join("")}
+          </select></div>
+          <div><label>색상</label><input type="color" id="rr-color-${j.id}" value="${cap.color || "#ffffff"}"
+            style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer"></div>
+        </div>
+        <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
+      </details>
       <div class="upbox">
         <label>업로드 제목</label><input type="text" id="ti-${j.id}" value="${esc(j.script?.title || "")}">
         <label>설명</label><textarea id="de-${j.id}" rows="3">${esc(j.script?.description || "")}</textarea>

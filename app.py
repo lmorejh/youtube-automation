@@ -54,6 +54,13 @@ class UploadRequest(BaseModel):
     privacy: str = "private"    # private | unlisted | public
 
 
+class RerenderRequest(BaseModel):
+    font: str = ""
+    size: str = "normal"
+    color: str = "#ffffff"
+    style: str = "box"
+
+
 class EditorCreate(BaseModel):
     job_id: str | None = None
     fresh: bool = False         # true면 기존 세션 무시하고 새로 시작
@@ -168,6 +175,24 @@ def _do_upload(job: dict, meta: dict):
         job["upload_status"] = "upload_error"
         job["log"].append(f"업로드 실패: {e}")
     store.save_job(job)
+
+
+@app.post("/api/jobs/{job_id}/rerender")
+def rerender_job(job_id: str, req: RerenderRequest):
+    """자막 옵션만 바꿔 재렌더 (대본·나레이션 재사용)."""
+    job = _find(job_id)
+    if job["status"] == "running":
+        raise HTTPException(400, "작업이 진행 중입니다")
+    if not job.get("script"):
+        raise HTTPException(400, "대본이 없어 재렌더할 수 없습니다")
+    missing = [s for s in job["script"]["scenes"] if not Path(s.get("audio", "")).exists()]
+    if missing:
+        raise HTTPException(400, "나레이션 파일이 삭제되어 재렌더할 수 없습니다")
+    caption = {"font": req.font, "size": req.size, "color": req.color, "style": req.style}
+    job["status"] = "running"
+    job["progress"] = 0
+    threading.Thread(target=runner.rerender_job, args=(job, caption), daemon=True).start()
+    return {"ok": True}
 
 
 # ---------- 간편 편집기 ----------
