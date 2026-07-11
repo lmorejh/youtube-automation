@@ -10,12 +10,14 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from pipeline import editor, runner, upload
+import time
+
+from pipeline import editor, runner, store, upload
 from pipeline.config import APP_PASSWORD, DEFAULT_VOICE, OUTPUT_DIR
 
 app = FastAPI(title="YouTube 자동화")
 BASE = Path(__file__).resolve().parent
-JOBS: dict[str, dict] = {}
+JOBS: dict[str, dict] = store.load_jobs()  # 서버 재시작 시 이전 작업 복원
 
 
 @app.middleware("http")
@@ -79,7 +81,7 @@ async def create_job(
               "reference_urls": [u.strip() for u in reference_urls.splitlines() if u.strip()],
               "extra": extra, "voice": voice, "source_text": source_text,
               "assets": visuals, "bgm": bgm}
-    job = {"id": job_id, "status": "running", "stage": "대기 중",
+    job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
            "progress": 0, "log": [], "params": params,
            "script": None, "video": None, "thumbnail": None,
            "upload_status": None, "youtube_url": None, "error": None}
@@ -155,6 +157,7 @@ def _do_upload(job: dict, meta: dict):
     except Exception as e:
         job["upload_status"] = "upload_error"
         job["log"].append(f"업로드 실패: {e}")
+    store.save_job(job)
 
 
 # ---------- 간편 편집기 ----------
@@ -233,6 +236,7 @@ def editor_apply(sid: str):
     job["video"] = s["result"]
     job["upload_status"] = None
     job["log"].append("✂️ 편집본으로 영상이 교체되었습니다")
+    store.save_job(job)
     return {"ok": True, "job_id": s["job_id"]}
 
 

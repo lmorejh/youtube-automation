@@ -7,6 +7,7 @@ from .assemble import assemble
 from .config import OUTPUT_DIR, SIZES
 from .reference import analyze_references
 from .script_gen import generate_script
+from .store import save_job
 from .thumbnail import make_thumbnail
 from .tts import synthesize_scenes
 from .visuals import prepare_visuals
@@ -21,6 +22,7 @@ def run_job(job: dict):
         job["status"] = "error"
         job["error"] = f"{type(e).__name__}: {e}"
         _log(job, f"오류 발생: {job['error']}")
+    save_job(job)
 
 
 def _run(job: dict):
@@ -65,6 +67,7 @@ def _set(job: dict, stage: str, progress: int):
     job["stage"] = stage
     job["progress"] = progress
     _log(job, stage)
+    save_job(job)
 
 
 def _log(job: dict, msg: str):
