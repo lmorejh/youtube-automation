@@ -57,7 +57,7 @@ def _run(job: dict):
     if bgm_path:
         _log(job, f"배경음악 적용: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
     job["video"] = assemble(script["scenes"], size, workdir, lambda m: _log(job, m),
-                            bgm_path, bgm_vol)
+                            bgm_path, bgm_vol, p.get("transition", "none"), p.get("sfx", "none"))
 
     _set(job, "썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)
@@ -98,7 +98,8 @@ def _rerender(job: dict, caption: dict, voice: str | None = None):
     bgm_path, bgm_vol = bgm_settings(p)
     if bgm_path:
         _log(job, f"배경음악: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
-    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m), bgm_path, bgm_vol)
+    job["video"] = assemble(scenes, size, workdir, lambda m: _log(job, m),
+                            bgm_path, bgm_vol, p.get("transition", "none"), p.get("sfx", "none"))
 
     _set(job, "재렌더: 썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)

@@ -81,6 +81,7 @@ async def create_job(
     font: str = Form(""), caption_size: str = Form("normal"),
     caption_color: str = Form("#ffffff"), caption_style: str = Form("box"),
     bgm_volume: str = Form("12"),
+    transition: str = Form("none"), sfx: str = Form("none"),
 ):
     if not topic.strip():
         raise HTTPException(400, "주제를 입력하세요")
@@ -90,6 +91,7 @@ async def create_job(
               "reference_urls": [u.strip() for u in reference_urls.splitlines() if u.strip()],
               "extra": extra, "voice": voice, "source_text": source_text,
               "assets": visuals, "bgm": bgm, "bgm_volume": _parse_volume(bgm_volume),
+              "transition": transition, "sfx": sfx,
               "caption": {"font": font, "size": caption_size,
                           "color": caption_color, "style": caption_style}}
     job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
@@ -176,7 +178,8 @@ async def rerender_job(
     job_id: str, font: str = Form(""), size: str = Form("normal"),
     color: str = Form("#ffffff"), style: str = Form("box"),
     bgm_use: str = Form("__keep__"), bgm_volume: str = Form(""),
-    voice: str = Form(""), files: list[UploadFile] = File(default=[]),
+    voice: str = Form(""), transition: str = Form("__keep__"), sfx: str = Form("__keep__"),
+    files: list[UploadFile] = File(default=[]),
 ):
     """자막·BGM·음성 옵션만 바꿔 재렌더 (대본 재사용)."""
     job = _find(job_id)
@@ -202,6 +205,10 @@ async def rerender_job(
         p["bgm_use"] = _resolve_bgm(p, bgm_use)  # ""이면 BGM 제거
     if bgm_volume.strip():
         p["bgm_volume"] = _parse_volume(bgm_volume)
+    if transition != "__keep__":
+        p["transition"] = transition
+    if sfx != "__keep__":
+        p["sfx"] = sfx
     caption = {"font": font, "size": size, "color": color, "style": style}
     job["status"] = "running"
     job["progress"] = 0

@@ -111,6 +111,26 @@
         <label>자막 색상</label>
         <input type="color" id="capcolor" value="#ffffff" style="width:100%; height:38px; background:#111827; border:1px solid var(--line); border-radius:8px; cursor:pointer">
       </div>
+      <div>
+        <label>화면 전환 효과</label>
+        <select id="transition">
+          <option value="none">없음 (바로 전환)</option>
+          <option value="fade">디졸브 (겹치며 전환)</option>
+          <option value="fadeblack">페이드 블랙</option>
+          <option value="slideleft">슬라이드</option>
+          <option value="wipeleft">와이프</option>
+          <option value="circleopen">원형 확대</option>
+        </select>
+      </div>
+      <div>
+        <label>전환 효과음</label>
+        <select id="sfx">
+          <option value="none">없음</option>
+          <option value="whoosh">휙 (스우시)</option>
+          <option value="ding">딩 (벨)</option>
+          <option value="pop">팝</option>
+        </select>
+      </div>
     </div>
 
     <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
@@ -141,6 +161,11 @@ let fmt = "long";
 
 const VOICES = [["ko-KR-SunHiNeural", "선히 (여성)"], ["ko-KR-InJoonNeural", "인준 (남성)"],
                 ["ko-KR-HyunsuMultilingualNeural", "현수 (남성)"]];
+const TRANSITIONS = [["none", "없음 (바로 전환)"], ["fade", "디졸브 (겹치며 전환)"], ["fadeblack", "페이드 블랙"],
+                     ["slideleft", "슬라이드"], ["wipeleft", "와이프"], ["circleopen", "원형 확대"]];
+const SFX_LIST = [["none", "없음"], ["whoosh", "휙 (스우시)"], ["ding", "딩 (벨)"], ["pop", "팝"]];
+const selOptions = (list, sel) => list.map(o =>
+  `<option value="${o[0]}" ${o[0] === sel ? "selected" : ""}>${o[1]}</option>`).join("");
 let FONTS = [];
 (async () => {
   FONTS = await (await fetch("/api/fonts")).json();
@@ -177,6 +202,8 @@ async function createJob() {
   fd.append("caption_style", document.getElementById("capstyle").value);
   fd.append("caption_color", document.getElementById("capcolor").value);
   fd.append("bgm_volume", document.getElementById("bgmvol").value);
+  fd.append("transition", document.getElementById("transition").value);
+  fd.append("sfx", document.getElementById("sfx").value);
   for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;
@@ -198,6 +225,8 @@ async function doRerender(id) {
   fd.append("bgm_use", document.getElementById("rr-bgm-" + id).value);
   fd.append("bgm_volume", document.getElementById("rr-vol-" + id).value);
   fd.append("voice", document.getElementById("rr-voice-" + id).value);
+  fd.append("transition", document.getElementById("rr-tr-" + id).value);
+  fd.append("sfx", document.getElementById("rr-sfx-" + id).value);
   const bgmFile = document.getElementById("rr-bgmfile-" + id).files[0];
   if (bgmFile) fd.append("files", bgmFile);
   const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST", body: fd});
@@ -275,6 +304,14 @@ function jobCard(j) {
               oninput="document.getElementById('rr-volv-${j.id}').textContent = this.value + '%'"></div>
           <div><label>새 BGM 파일 (선택 — 업로드하면 그 파일로 교체)</label>
             <input type="file" id="rr-bgmfile-${j.id}" accept="audio/*" style="padding:8px"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <div><label>화면 전환 효과</label><select id="rr-tr-${j.id}">
+            ${selOptions(TRANSITIONS, j.params.transition || "none")}
+          </select></div>
+          <div><label>전환 효과음</label><select id="rr-sfx-${j.id}">
+            ${selOptions(SFX_LIST, j.params.sfx || "none")}
+          </select></div>
         </div>
         <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
       </details>
