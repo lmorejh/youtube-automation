@@ -4,7 +4,7 @@ from .config import YOUTUBE_CLIENT_SECRET_FILE, YOUTUBE_TOKEN_FILE
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 
-def upload_video(video: str, thumbnail: str, meta: dict, log) -> str:
+def upload_video(video: str, thumbnail: str | None, meta: dict, log) -> str:
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 
@@ -27,7 +27,8 @@ def upload_video(video: str, thumbnail: str, meta: dict, log) -> str:
         if status:
             log(f"업로드 진행률 {int(status.progress() * 100)}%")
     video_id = response["id"]
-    _set_thumbnail(yt, video_id, thumbnail, log)
+    if thumbnail:
+        _set_thumbnail(yt, video_id, thumbnail, log)
     return f"https://www.youtube.com/watch?v={video_id}"
 
 

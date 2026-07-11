@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from pipeline import runner, upload
+from pipeline import editor, runner, upload
 from pipeline.config import APP_PASSWORD, DEFAULT_VOICE, OUTPUT_DIR
 
 app = FastAPI(title="YouTube 자동화")
@@ -20,8 +20,13 @@ JOBS: dict[str, dict] = {}
 
 @app.middleware("http")
 async def require_password(request, call_next):
-    """APP_PASSWORD 설정 시 전체 요청에 Basic 인증 요구 (터널 공개용)."""
-    if APP_PASSWORD and not _password_ok(request.headers.get("authorization", "")):
+    """APP_PASSWORD 설정 시 터널(외부) 경유 요청에만 Basic 인증 요구.
+
+    Cloudflare Tunnel을 거친 요청에는 cf-connecting-ip 헤더가 붙는다.
+    로컬(PC에서 직접 localhost 접속)은 인증 없이 사용.
+    """
+    external = "cf-connecting-ip" in request.headers
+    if APP_PASSWORD and external and not _password_ok(request.headers.get("authorization", "")):
         return Response(status_code=401,
                         headers={"WWW-Authenticate": 'Basic realm="youtube-automation"'})
     return await call_next(request)
@@ -45,6 +50,14 @@ class UploadRequest(BaseModel):
     title: str = ""
     description: str = ""
     privacy: str = "private"    # private | unlisted | public
+
+
+class EditorCreate(BaseModel):
+    job_id: str | None = None
+
+
+class RenderRequest(BaseModel):
+    timeline: list[dict]        # [{clip_id, start, end}]
 
 
 @app.get("/")
@@ -142,6 +155,130 @@ def _do_upload(job: dict, meta: dict):
     except Exception as e:
         job["upload_status"] = "upload_error"
         job["log"].append(f"업로드 실패: {e}")
+
+
+# ---------- 간편 편집기 ----------
+
+@app.get("/edit")
+def edit_page():
+    return FileResponse(BASE / "static" / "editor.html")
+
+
+@app.post("/api/editor/sessions")
+def create_editor_session(req: EditorCreate):
+    job = None
+    if req.job_id:
+        job = _find(req.job_id)
+        if job["status"] != "done":
+            raise HTTPException(400, "영상 생성이 완료된 작업만 편집할 수 있습니다")
+    return _editor_public(editor.create_session(job))
+
+
+@app.get("/api/editor/sessions/{sid}")
+def get_editor_session(sid: str):
+    return _editor_public(_esession(sid))
+
+
+@app.post("/api/editor/sessions/{sid}/clips")
+async def add_editor_clips(sid: str, files: list[UploadFile] = File(default=[])):
+    s = _esession(sid)
+    for f in files:
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in VIDEO_EXT:
+            raise HTTPException(400, f"영상 파일만 추가할 수 있습니다: {f.filename}")
+        dest = Path(s["workdir"]) / f"up_{len(s['clips']):03d}{ext}"
+        dest.write_bytes(await f.read())
+        editor.add_clip(s, str(dest), f.filename or dest.name)
+    return _editor_public(s)
+
+
+@app.get("/api/editor/sessions/{sid}/clips/{cid}/video")
+def editor_clip_video(sid: str, cid: str):
+    return FileResponse(_eclip(sid, cid)["path"], media_type="video/mp4")
+
+
+@app.get("/api/editor/sessions/{sid}/clips/{cid}/thumb")
+def editor_clip_thumb(sid: str, cid: str):
+    return FileResponse(_eclip(sid, cid)["thumb"], media_type="image/jpeg")
+
+
+@app.post("/api/editor/sessions/{sid}/render")
+def render_editor(sid: str, req: RenderRequest):
+    s = _esession(sid)
+    if s["status"] == "rendering":
+        raise HTTPException(400, "이미 렌더링 중입니다")
+    if any(item.get("clip_id") not in s["clips"] for item in req.timeline):
+        raise HTTPException(400, "타임라인에 알 수 없는 클립이 있습니다")
+    threading.Thread(target=editor.render, args=(s, req.timeline), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/editor/sessions/{sid}/result")
+def editor_result(sid: str):
+    s = _esession(sid)
+    if not s["result"]:
+        raise HTTPException(404, "렌더링 결과가 아직 없습니다")
+    return FileResponse(s["result"], media_type="video/mp4")
+
+
+@app.post("/api/editor/sessions/{sid}/apply")
+def editor_apply(sid: str):
+    """편집 결과를 원본 작업의 영상으로 교체 → 기존 업로드 흐름 사용."""
+    s = _esession(sid)
+    if not s["result"]:
+        raise HTTPException(400, "렌더링을 먼저 완료하세요")
+    if not s["job_id"] or s["job_id"] not in JOBS:
+        raise HTTPException(400, "연결된 작업이 없습니다 (편집기에서 직접 업로드하세요)")
+    job = JOBS[s["job_id"]]
+    job["video"] = s["result"]
+    job["upload_status"] = None
+    job["log"].append("✂️ 편집본으로 영상이 교체되었습니다")
+    return {"ok": True, "job_id": s["job_id"]}
+
+
+@app.post("/api/editor/sessions/{sid}/upload")
+def editor_upload(sid: str, req: UploadRequest):
+    """편집 결과를 YouTube로 직접 업로드 (사용자 확인 후 호출됨)."""
+    s = _esession(sid)
+    if not s["result"]:
+        raise HTTPException(400, "렌더링을 먼저 완료하세요")
+    if s["upload_status"] == "uploading":
+        raise HTTPException(400, "이미 업로드 중입니다")
+    meta = {"title": req.title or "편집 영상", "description": req.description,
+            "tags": [], "privacy": req.privacy}
+    s["upload_status"] = "uploading"
+    threading.Thread(target=_do_editor_upload, args=(s, meta), daemon=True).start()
+    return {"ok": True}
+
+
+def _do_editor_upload(s: dict, meta: dict):
+    try:
+        s["youtube_url"] = upload.upload_video(s["result"], None, meta, lambda m: None)
+        s["upload_status"] = "uploaded"
+    except Exception as e:
+        s["upload_status"] = "upload_error"
+        s["error"] = f"업로드 실패: {e}"
+
+
+def _esession(sid: str) -> dict:
+    if sid not in editor.SESSIONS:
+        raise HTTPException(404, "편집 세션을 찾을 수 없습니다")
+    return editor.SESSIONS[sid]
+
+
+def _eclip(sid: str, cid: str) -> dict:
+    clip = _esession(sid)["clips"].get(cid)
+    if not clip:
+        raise HTTPException(404, "클립을 찾을 수 없습니다")
+    return clip
+
+
+def _editor_public(s: dict) -> dict:
+    return {"id": s["id"], "size": s["size"], "status": s["status"], "progress": s["progress"],
+            "error": s["error"], "has_result": bool(s["result"]), "job_id": s["job_id"],
+            "upload_status": s["upload_status"], "youtube_url": s["youtube_url"],
+            "clips": [{"id": c["id"], "name": c["name"], "duration": c["duration"]}
+                      for c in s["clips"].values()]}
 
 
 def _find(job_id: str) -> dict:

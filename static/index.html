@@ -157,8 +157,9 @@ function jobCard(j) {
     html += `<div class="bar"><i style="width:${j.progress}%"></i></div><div class="stage">⏳ ${esc(j.stage)} (${j.progress}%)</div>`;
   if (j.status === "error") html += `<div class="err">❌ ${esc(j.error || "")}</div>`;
   if (j.status === "done") {
-    html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료</div>
-      <video controls preload="metadata" src="/api/jobs/${j.id}/video"></video>
+    html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료
+        <a class="link" href="/edit?job=${j.id}" style="margin-left:10px">✂️ 편집하기</a></div>
+      <video controls preload="metadata" src="/api/jobs/${j.id}/video?t=${j.log.length}"></video>
       <div class="upbox">
         <label>업로드 제목</label><input type="text" id="ti-${j.id}" value="${esc(j.script?.title || "")}">
         <label>설명</label><textarea id="de-${j.id}" rows="3">${esc(j.script?.description || "")}</textarea>
