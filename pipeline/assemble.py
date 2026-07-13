@@ -19,7 +19,8 @@ SFX = {
 
 
 def assemble(scenes: list[dict], size, workdir: Path, log, bgm: str | None = None,
-             bgm_volume: float = 0.12, transition: str = "none", sfx: str = "none") -> str:
+             bgm_volume: float = 0.12, transition: str = "none", sfx: str = "none",
+             watermark: dict | None = None) -> str:
     t = TRANSITION_SEC if transition != "none" and len(scenes) > 1 else 0.0
     clips, lengths = [], []
     for i, scene in enumerate(scenes):
@@ -39,7 +40,9 @@ def assemble(scenes: list[dict], size, workdir: Path, log, bgm: str | None = Non
     sfx_file = _make_sfx(sfx, workdir)
     if sfx_file:
         log(f"전환 효과음 적용: {sfx}")
-    _finalize(merged, final, bgm, bgm_volume, sfx_file, boundaries)
+    if watermark:
+        log(f"워터마크 적용: {watermark['position']} (투명도 {int(watermark['opacity'] * 100)}%)")
+    _finalize(merged, final, size, bgm, bgm_volume, sfx_file, boundaries, watermark)
     _write_srt(scenes, workdir / "subtitles.srt")
     return str(final)
 
@@ -115,13 +118,14 @@ def _concat(clips: list[Path], workdir: Path) -> Path:
     return merged
 
 
-def _finalize(merged: Path, final: Path, bgm: str | None = None, bgm_volume: float = 0.12,
-              sfx: Path | None = None, boundaries: list[float] | None = None):
+def _finalize(merged: Path, final: Path, size=None, bgm: str | None = None,
+              bgm_volume: float = 0.12, sfx: Path | None = None,
+              boundaries: list[float] | None = None, watermark: dict | None = None):
     total = probe_duration(merged)
     fade = f"fade=t=in:d=0.5,fade=t=out:st={max(total - 0.7, 0):.2f}:d=0.7"
     afade = f"afade=t=out:st={max(total - 0.7, 0):.2f}:d=0.7"
     inputs = ["-i", str(merged)]
-    fc, mix, idx = [f"[0:v]{fade}[v]"], ["[0:a]"], 1
+    fc, mix, idx = [], ["[0:a]"], 1
     if bgm and bgm_volume > 0:
         inputs += ["-stream_loop", "-1", "-i", bgm]
         fc.append(f"[{idx}:a]volume={bgm_volume:.3f}[b]")
@@ -135,6 +139,18 @@ def _finalize(merged: Path, final: Path, bgm: str | None = None, bgm_volume: flo
             ms = int(bt * 1000)
             fc.append(f"[sf{k}]adelay={ms}|{ms},volume=0.6[sd{k}]")
             mix.append(f"[sd{k}]")
+        idx += 1
+    if watermark and size:
+        inputs += ["-i", watermark["image"]]
+        wm_w, m = int(size[0] * watermark["frac"]), int(size[0] * 0.03)
+        pos = {"tl": f"{m}:{m}", "tr": f"main_w-overlay_w-{m}:{m}",
+               "bl": f"{m}:main_h-overlay_h-{m}",
+               "br": f"main_w-overlay_w-{m}:main_h-overlay_h-{m}"}[watermark.get("position", "tr")]
+        fc.append(f"[{idx}:v]scale={wm_w}:-1,format=rgba,"
+                  f"colorchannelmixer=aa={watermark['opacity']:.2f}[wm]")
+        fc.append(f"[0:v][wm]overlay={pos},{fade}[v]")
+    else:
+        fc.append(f"[0:v]{fade}[v]")
     if len(mix) == 1:
         fc.append(f"[0:a]{afade}[a]")
     else:

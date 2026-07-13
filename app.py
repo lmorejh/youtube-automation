@@ -84,6 +84,9 @@ async def create_job(
     transition: str = Form("none"), sfx: str = Form("none"),
     intro: str = Form("none"), outro: str = Form("none"), channel: str = Form(""),
     intro_file: UploadFile | None = File(None), outro_file: UploadFile | None = File(None),
+    watermark: str = Form("none"), wm_position: str = Form("tr"),
+    wm_size: str = Form("normal"), wm_opacity: str = Form("70"),
+    wm_file: UploadFile | None = File(None),
 ):
     if not topic.strip():
         raise HTTPException(400, "주제를 입력하세요")
@@ -102,6 +105,11 @@ async def create_job(
         if path:
             params[role] = "custom"
             params[f"{role}_video"] = path
+    params["watermark"] = {"kind": watermark, "position": wm_position, "size": wm_size,
+                           "opacity": _parse_volume(wm_opacity)}
+    logo = await _save_logo(wm_file, job_id)
+    if logo:
+        params["watermark"].update(kind="logo", image=logo)
     job = {"id": job_id, "created": time.time(), "status": "running", "stage": "대기 중",
            "progress": 0, "log": [], "params": params,
            "script": None, "video": None, "thumbnail": None,
@@ -109,6 +117,20 @@ async def create_job(
     JOBS[job_id] = job
     threading.Thread(target=runner.run_job, args=(job,), daemon=True).start()
     return {"id": job_id}
+
+
+async def _save_logo(f: UploadFile | None, job_id: str) -> str | None:
+    """워터마크 로고 이미지 저장."""
+    if not f or not f.filename:
+        return None
+    ext = Path(f.filename).suffix.lower()
+    if ext not in IMAGE_EXT:
+        raise HTTPException(400, f"로고는 이미지 파일만 가능합니다: {f.filename}")
+    dest_dir = OUTPUT_DIR / job_id / "assets"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"logo{ext}"
+    dest.write_bytes(await f.read())
+    return str(dest)
 
 
 async def _save_role_video(f: UploadFile | None, job_id: str, role: str) -> str | None:
@@ -203,6 +225,9 @@ async def rerender_job(
     voice: str = Form(""), transition: str = Form("__keep__"), sfx: str = Form("__keep__"),
     intro: str = Form("__keep__"), outro: str = Form("__keep__"), channel: str = Form("__keep__"),
     intro_file: UploadFile | None = File(None), outro_file: UploadFile | None = File(None),
+    watermark: str = Form("__keep__"), wm_position: str = Form("__keep__"),
+    wm_size: str = Form("__keep__"), wm_opacity: str = Form(""),
+    wm_file: UploadFile | None = File(None),
     files: list[UploadFile] = File(default=[]),
 ):
     """자막·BGM·음성 옵션만 바꿔 재렌더 (대본 재사용)."""
@@ -242,6 +267,19 @@ async def rerender_job(
             p[f"{role}_video"] = path
         elif sel != "__keep__":
             p[role] = sel
+    wm = p.get("watermark") or {"kind": "none", "position": "tr", "size": "normal", "opacity": 0.7}
+    if watermark != "__keep__":
+        wm["kind"] = watermark
+    if wm_position != "__keep__":
+        wm["position"] = wm_position
+    if wm_size != "__keep__":
+        wm["size"] = wm_size
+    if wm_opacity.strip():
+        wm["opacity"] = _parse_volume(wm_opacity)
+    logo = await _save_logo(wm_file, job_id)
+    if logo:
+        wm.update(kind="logo", image=logo)
+    p["watermark"] = wm
     caption = {"font": font, "size": size, "color": color, "style": style}
     job["status"] = "running"
     job["progress"] = 0

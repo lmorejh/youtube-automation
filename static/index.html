@@ -166,6 +166,43 @@
       </div>
     </div>
 
+    <div class="row">
+      <div>
+        <label>워터마크</label>
+        <select id="wm">
+          <option value="none">없음</option>
+          <option value="logo">로고 이미지 (아래에 업로드)</option>
+          <option value="text">채널명 텍스트</option>
+        </select>
+      </div>
+      <div>
+        <label>위치</label>
+        <select id="wmpos">
+          <option value="tr">우상단</option>
+          <option value="tl">좌상단</option>
+          <option value="br">우하단</option>
+          <option value="bl">좌하단</option>
+        </select>
+      </div>
+      <div>
+        <label>크기</label>
+        <select id="wmsize">
+          <option value="normal">보통</option>
+          <option value="small">작게</option>
+          <option value="large">크게</option>
+        </select>
+      </div>
+      <div>
+        <label>투명도: <b id="wmopv" style="color:var(--ok)">70%</b></label>
+        <input type="range" id="wmop" min="10" max="100" value="70" style="width:100%; accent-color:var(--accent); margin-top:8px"
+          oninput="document.getElementById('wmopv').textContent = this.value + '%'">
+      </div>
+      <div>
+        <label>로고 이미지 (투명 PNG 권장)</label>
+        <input type="file" id="wmfile" accept="image/*" style="padding:8px">
+      </div>
+    </div>
+
     <label>참고 영상 URL (선택, 한 줄에 하나씩 — 말투·구성을 참고합니다)</label>
     <textarea id="refs" rows="2" placeholder="https://www.youtube.com/watch?v=..."></textarea>
 
@@ -201,6 +238,9 @@ const INTRO_LIST = [["none", "없음"], ["title", "타이틀 카드"], ["minimal
 const OUTRO_LIST = [["none", "없음"], ["subscribe", "구독 유도"], ["thanks", "감사 인사"]];
 const introList = cur => cur === "custom" ? [...INTRO_LIST, ["custom", "직접 업로드한 영상"]] : INTRO_LIST;
 const outroList = cur => cur === "custom" ? [...OUTRO_LIST, ["custom", "직접 업로드한 영상"]] : OUTRO_LIST;
+const WM_LIST = [["none", "없음"], ["logo", "로고 이미지"], ["text", "채널명 텍스트"]];
+const WM_POS = [["tr", "우상단"], ["tl", "좌상단"], ["br", "우하단"], ["bl", "좌하단"]];
+const WM_SIZE = [["normal", "보통"], ["small", "작게"], ["large", "크게"]];
 const selOptions = (list, sel) => list.map(o =>
   `<option value="${o[0]}" ${o[0] === sel ? "selected" : ""}>${o[1]}</option>`).join("");
 let FONTS = [];
@@ -248,6 +288,12 @@ async function createJob() {
   if (introF) fd.append("intro_file", introF);
   const outroF = document.getElementById("outrofile").files[0];
   if (outroF) fd.append("outro_file", outroF);
+  fd.append("watermark", document.getElementById("wm").value);
+  fd.append("wm_position", document.getElementById("wmpos").value);
+  fd.append("wm_size", document.getElementById("wmsize").value);
+  fd.append("wm_opacity", document.getElementById("wmop").value);
+  const wmF = document.getElementById("wmfile").files[0];
+  if (wmF) fd.append("wm_file", wmF);
   for (const f of fileInput.files) fd.append("files", f);
   const btn = document.getElementById("go");
   btn.disabled = true;
@@ -278,6 +324,12 @@ async function doRerender(id) {
   if (introF) fd.append("intro_file", introF);
   const outroF = document.getElementById("rr-outrofile-" + id).files[0];
   if (outroF) fd.append("outro_file", outroF);
+  fd.append("watermark", document.getElementById("rr-wm-" + id).value);
+  fd.append("wm_position", document.getElementById("rr-wmpos-" + id).value);
+  fd.append("wm_size", document.getElementById("rr-wmsize-" + id).value);
+  fd.append("wm_opacity", document.getElementById("rr-wmop-" + id).value);
+  const wmF = document.getElementById("rr-wmfile-" + id).files[0];
+  if (wmF) fd.append("wm_file", wmF);
   const bgmFile = document.getElementById("rr-bgmfile-" + id).files[0];
   if (bgmFile) fd.append("files", bgmFile);
   const r = await fetch(`/api/jobs/${id}/rerender`, {method:"POST", body: fd});
@@ -322,6 +374,8 @@ function jobCard(j) {
     const bgmVol = Math.round((j.params.bgm_volume ?? 0.12) * 100);
     const thumb = j.params.thumb || {};
     const thumbPos = Math.round((thumb.pos ?? 0.3) * 100);
+    const wm = j.params.watermark || {};
+    const wmOp = Math.round((wm.opacity ?? 0.7) * 100);
     html += `<div class="stage" style="color:var(--ok)">✅ 영상 생성 완료
         <a class="link" href="/edit?job=${j.id}" style="margin-left:10px">✂️ 편집하기</a></div>
       <video controls preload="metadata" src="/api/jobs/${j.id}/video?t=${j.log.length}"></video>
@@ -374,6 +428,22 @@ function jobCard(j) {
           <div><label>채널명</label><input type="text" id="rr-ch-${j.id}" value="${esc(j.params.channel || "")}" placeholder="인트로/아웃트로에 표시"></div>
           <div><label>인트로 영상 업로드 (선택)</label><input type="file" id="rr-introfile-${j.id}" accept="video/*" style="padding:8px"></div>
           <div><label>아웃트로 영상 업로드 (선택)</label><input type="file" id="rr-outrofile-${j.id}" accept="video/*" style="padding:8px"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <div><label>워터마크</label><select id="rr-wm-${j.id}">
+            ${selOptions(WM_LIST, wm.kind || "none")}
+          </select></div>
+          <div><label>위치</label><select id="rr-wmpos-${j.id}">
+            ${selOptions(WM_POS, wm.position || "tr")}
+          </select></div>
+          <div><label>크기</label><select id="rr-wmsize-${j.id}">
+            ${selOptions(WM_SIZE, wm.size || "normal")}
+          </select></div>
+          <div><label>투명도: <b id="rr-wmopv-${j.id}" style="color:var(--ok)">${wmOp}%</b></label>
+            <input type="range" id="rr-wmop-${j.id}" min="10" max="100" value="${wmOp}"
+              style="width:100%; accent-color:var(--accent); margin-top:8px"
+              oninput="document.getElementById('rr-wmopv-${j.id}').textContent = this.value + '%'"></div>
+          <div><label>로고 이미지 (선택)</label><input type="file" id="rr-wmfile-${j.id}" accept="image/*" style="padding:8px"></div>
         </div>
         <button class="btn2" style="margin-top:12px" onclick="doRerender('${j.id}')">🔁 재렌더 시작</button>
       </details>

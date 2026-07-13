@@ -59,7 +59,8 @@ def _run(job: dict):
         _log(job, f"배경음악 적용: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
     job["video"] = assemble(_full_scenes(job, size, workdir), size, workdir,
                             lambda m: _log(job, m), bgm_path, bgm_vol,
-                            p.get("transition", "none"), p.get("sfx", "none"))
+                            p.get("transition", "none"), p.get("sfx", "none"),
+                            watermark_settings(job, workdir))
 
     _set(job, "썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)
@@ -102,7 +103,8 @@ def _rerender(job: dict, caption: dict, voice: str | None = None):
         _log(job, f"배경음악: {Path(bgm_path).name} (볼륨 {int(bgm_vol * 100)}%)")
     job["video"] = assemble(_full_scenes(job, size, workdir), size, workdir,
                             lambda m: _log(job, m), bgm_path, bgm_vol,
-                            p.get("transition", "none"), p.get("sfx", "none"))
+                            p.get("transition", "none"), p.get("sfx", "none"),
+                            watermark_settings(job, workdir))
 
     _set(job, "재렌더: 썸네일 생성 중", 92)
     job["thumbnail"] = make_job_thumbnail(job, workdir)
@@ -127,6 +129,32 @@ def make_job_thumbnail(job: dict, workdir: Path) -> str:
     font = resolve((p.get("caption") or {}).get("font", ""))[1]
     return make_thumbnail(job["video"], text, workdir, font,
                           t.get("color", "#ffdc3c"), t.get("pos", 0.3), t.get("image"))
+
+
+def watermark_settings(job: dict, workdir: Path) -> dict | None:
+    """워터마크 설정 → assemble용 스펙 (이미지 경로/위치/크기 비율/투명도)."""
+    from .fonts import resolve
+    from .visuals import make_text_watermark
+
+    p = job["params"]
+    wm = p.get("watermark") or {}
+    kind = wm.get("kind", "none")
+    if kind == "logo":
+        image = wm.get("image")
+        if not image or not Path(image).exists():
+            return None
+    elif kind == "text":
+        text = (p.get("channel") or "").strip()
+        if not text:
+            return None
+        font = resolve((p.get("caption") or {}).get("font", ""))[1]
+        image = str(make_text_watermark(text, font, workdir / "wm_text.png"))
+    else:
+        return None
+    fracs = {"small": 0.08, "normal": 0.12, "large": 0.18}
+    return {"image": image, "position": wm.get("position", "tr"),
+            "frac": fracs.get(wm.get("size", "normal"), 0.12),
+            "opacity": max(0.05, min(1.0, float(wm.get("opacity", 0.7))))}
 
 
 def bgm_settings(p: dict) -> tuple[str | None, float]:

@@ -39,6 +39,19 @@ def prepare_visuals(scenes: list[dict], fmt: str, style: str, size, workdir: Pat
             scene["image"] = _make_fallback(scene, size, workdir / f"bg_{i:02d}.png", i, opts)
 
 
+def make_text_watermark(text: str, font_path: str, dest: Path) -> Path:
+    """채널명 텍스트 워터마크 (투명 배경 PNG)."""
+    probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+    f = _font(font_path, 96)
+    w = int(probe.textlength(text, font=f)) + 40
+    img = Image.new("RGBA", (w, 150), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.text((20, 20), text, font=f, fill=(255, 255, 255, 255),
+           stroke_width=4, stroke_fill=(0, 0, 0, 110))
+    img.save(dest)
+    return dest
+
+
 def refresh_captions(scenes: list[dict], style: str, size, workdir: Path, caption: dict | None):
     """재렌더용: 자막 오버레이와 생성형 슬라이드만 다시 그림 (스톡영상·업로드 소스는 유지)."""
     opts = _caption_opts(caption)

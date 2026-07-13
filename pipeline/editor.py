@@ -60,12 +60,13 @@ def create_session(job: dict | None) -> dict:
 
 
 def _load_job_clips(session: dict, job: dict):
-    from .runner import bgm_settings
+    from .runner import bgm_settings, watermark_settings
 
     session["job_id"] = job["id"]
     session["size"] = list(SIZES[job["params"]["format"]])
     session["bgm"], session["bgm_volume"] = bgm_settings(job["params"])
     job_dir = Path(job["video"]).parent
+    session["watermark"] = watermark_settings(job, job_dir)
     p = job["params"]
     names = (["인트로"] if p.get("intro", "none") != "none" else [])
     names += [s.get("caption") or f"장면 {i + 1}" for i, s in enumerate(job["script"]["scenes"])]
@@ -102,7 +103,8 @@ def render(session: dict, timeline: list[dict]):
         workdir = Path(session["workdir"])
         merged = _concat(parts, workdir)
         final = workdir / "final.mp4"
-        _finalize(merged, final, session["bgm"], session.get("bgm_volume", 0.12))
+        _finalize(merged, final, session["size"], session["bgm"],
+                  session.get("bgm_volume", 0.12), watermark=session.get("watermark"))
         session.update(result=str(final), status="done", progress=100)
     except Exception as e:
         session.update(status="error", error=f"{type(e).__name__}: {e}")
